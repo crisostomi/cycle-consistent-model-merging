@@ -1,0 +1,46 @@
+defaults:
+  - dataset: cifar10
+
+data_path: ${oc.env:PROJECT_ROOT}/data
+output_path: ${oc.env:PROJECT_ROOT}/output
+dataset_name: CIFAR10
+
+data:
+  _target_: ccmm.data.datamodule.MyDataModule
+
+  dataset: ${nn.dataset}
+
+  gpus: ${train.trainer.gpus}
+
+  num_workers:
+    train: 8
+    val: 4
+    test: 4
+
+  batch_size:
+    train: 512
+    val: 512
+    test: 512
+
+module:
+  _target_: ccmm.pl_modules.pl_module.MyLightningModule
+  model_name: VGG16
+  model:
+    _target_: ccmm.models.vgg.VGG
+    vgg_name: VGG16
+
+  optimizer:
+    _target_: torch.optim.SGD
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 0.0005
+
+  lr_scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+    T_0: 10
+    T_mult: 2
+    eta_min: 0 # min value for the lr
+    last_epoch: -1
+    verbose: False
+
+  # optim.lr_scheduler.CosineAnnealingLR

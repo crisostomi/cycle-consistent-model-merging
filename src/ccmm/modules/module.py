@@ -1,7 +1,6 @@
 from torch import nn
 
 
-# https://medium.com/@nutanbhogendrasharma/pytorch-convolutional-neural-network-with-mnist-dataset-4e8a4265e118
 class CNN(nn.Module):
     def __init__(self, num_classes: int):
         super(CNN, self).__init__()

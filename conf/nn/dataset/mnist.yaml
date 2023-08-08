@@ -1,0 +1,23 @@
+train:
+  _target_: torchvision.datasets.MNIST
+  root: ${nn.data_path}
+  train: True
+  download: True
+  transform: ${nn.dataset.train_transform}
+
+test:
+  _target_: torchvision.datasets.MNIST
+  root: ${nn.data_path}
+  train: False
+  download: True
+  transform: ${nn.dataset.test_transform}
+
+train_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: torchvision.transforms.Normalize
+      mean: [0.1307]
+      std: [0.3081]
+
+test_transform: ${nn.dataset.train_transform}

@@ -1,0 +1,5 @@
+output_path: ${oc.env:PROJECT_ROOT}/output
+model_a_seed: 1
+model_b_seed: 2
+model_a_info_path: ${nn.output_path}/MLP_seed${nn.model_a_seed}.json
+model_b_info_path: ${nn.output_path}/MLP_seed${nn.model_b_seed}.json

@@ -1,0 +1,14 @@
+seed_index: 0
+output_path: ${oc.env:PROJECT_ROOT}/output
+dataset_path: ${oc.env:PROJECT_ROOT}/data
+model_name: MLP
+dataset: MNIST
+model_a_seed: 1
+model_b_seed: 3
+permutation_spec_builder:
+  _target_: ccmm.utils.weight_matching.MLPPermutationSpecBuilder
+  num_hidden_layers: 4
+batch_size: 5000
+model_a_info_path: ${output_path}/${model_name}_seed${model_a_seed}.json
+model_b_info_path: ${output_path}/${model_name}_seed${model_b_seed}.json
+results_path: ${oc.env:PROJECT_ROOT}/results

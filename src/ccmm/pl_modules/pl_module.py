@@ -7,13 +7,13 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torchmetrics
+from hydra.utils import instantiate
 from torch.optim import Optimizer
 
 from nn_core.common import PROJECT_ROOT
 from nn_core.model_logging import NNLogger
 
 from ccmm.data.datamodule import MetaData
-from ccmm.modules.module import CNN
 
 pylogger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ pylogger = logging.getLogger(__name__)
 class MyLightningModule(pl.LightningModule):
     logger: NNLogger
 
-    def __init__(self, metadata: Optional[MetaData] = None, *args, **kwargs) -> None:
+    def __init__(self, model, metadata: Optional[MetaData] = None, *args, **kwargs) -> None:
         super().__init__()
 
         # Populate self.hparams with args and kwargs automagically!
@@ -31,13 +31,12 @@ class MyLightningModule(pl.LightningModule):
 
         self.metadata = metadata
 
-        # example
         metric = torchmetrics.Accuracy()
         self.train_accuracy = metric.clone()
         self.val_accuracy = metric.clone()
         self.test_accuracy = metric.clone()
 
-        self.model = CNN(num_classes=len(metadata.class_vocab))
+        self.model = instantiate(model, num_classes=len(metadata.class_vocab))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Method for the forward pass.
@@ -52,13 +51,11 @@ class MyLightningModule(pl.LightningModule):
         return self.model(x)
 
     def step(self, x, y) -> Mapping[str, Any]:
-        # example
         logits = self(x)
         loss = F.cross_entropy(logits, y)
         return {"logits": logits.detach(), "loss": loss}
 
     def training_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        # example
         x, y = batch
         step_out = self.step(x, y)
 
@@ -80,7 +77,6 @@ class MyLightningModule(pl.LightningModule):
         return step_out
 
     def validation_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        # example
         x, y = batch
         step_out = self.step(x, y)
 
@@ -102,7 +98,6 @@ class MyLightningModule(pl.LightningModule):
         return step_out
 
     def test_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        # example
         x, y = batch
         step_out = self.step(x, y)
 

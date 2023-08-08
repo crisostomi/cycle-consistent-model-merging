@@ -1,0 +1,50 @@
+defaults:
+  - dataset: mnist
+
+data_path: ${oc.env:PROJECT_ROOT}/data
+output_path: ${oc.env:PROJECT_ROOT}/output
+dataset_name: MNIST
+
+data:
+  _target_: ccmm.data.datamodule.MyDataModule
+
+  dataset: ${nn.dataset}
+
+  gpus: ${train.trainer.gpus}
+
+  num_workers:
+    train: 8
+    val: 4
+    test: 4
+
+  batch_size:
+    train: 512
+    val: 512
+    test: 512
+
+module:
+  _target_: ccmm.pl_modules.pl_module.MyLightningModule
+  model_name: MLP #
+
+  model:
+    _target_: ccmm.models.mlp.MLP # ccmm.models.cnn.CNN
+    input: 784 # 784 for MNIST, 3072 for CIFAR10
+
+  optimizer:
+    _target_: torch.optim.Adam
+    lr: 0.001
+    betas: [ 0.9, 0.999 ]
+    eps: 1e-08
+    weight_decay: 0
+
+    # optim.SGD(model.parameters(), momentum=0.9, lr=args.lr, weight_decay=1e-4)
+
+  lr_scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+    T_0: 10
+    T_mult: 2
+    eta_min: 0 # min value for the lr
+    last_epoch: -1
+    verbose: False
+
+  # optim.lr_scheduler.CosineAnnealingLR

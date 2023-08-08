@@ -1,0 +1,57 @@
+defaults:
+  - dataset: cifar10
+
+data_path: ${oc.env:PROJECT_ROOT}/data
+output_path: ${oc.env:PROJECT_ROOT}/output
+dataset_name: CIFAR10
+
+data:
+  _target_: ccmm.data.datamodule.MyDataModule
+
+  dataset: ${nn.dataset}
+
+  gpus: ${train.trainer.gpus}
+
+  num_workers:
+    train: 14
+    val: 4
+    test: 4
+
+  batch_size:
+    train: 1024
+    val: 512
+    test: 512
+
+module:
+  _target_: ccmm.pl_modules.pl_module.MyLightningModule
+  model_name: ResNet_${nn.module.model.depth}_${nn.module.model.widen_factor}
+
+  model:
+    _target_: ccmm.models.resnet.ResNet
+    depth: 22 # 22 or 50
+    num_classes: 10
+    widen_factor: 2 #
+
+  optimizer:
+    _target_: torch.optim.SGD
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 0.0005
+
+  # lr_scheduler:
+  #   _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+  #   T_0: 10
+  #   T_mult: 2
+  #   eta_min: 0 # min value for the lr
+  #   last_epoch: -1
+  #   verbose: False
+
+  lr_scheduler:
+    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+    warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
+    max_epochs: ${train.trainer.max_epochs}
+    warmup_start_lr: 1e-6
+    eta_min: 0.0
+    last_epoch: -1
+
+  # optim.lr_scheduler.CosineAnnealingLR
