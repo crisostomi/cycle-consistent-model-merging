@@ -30,21 +30,44 @@ def run(cfg: DictConfig) -> str:
 
     model_a = load_model_from_info(cfg.model_a_info_path)
     model_b = load_model_from_info(cfg.model_b_info_path)
+    model_c = load_model_from_info(cfg.model_c_info_path)
 
     model_a_orig_weights = copy.deepcopy(flatten_params(model_a.model))
     model_b_orig_weights = copy.deepcopy(flatten_params(model_b.model))
+    model_c_orig_weights = copy.deepcopy(flatten_params(model_c.model))
 
     permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
-    assert list(permutation_spec.axes_to_perm.keys()) == list(model_a.model.state_dict().keys())
+    permutations = {"a": {"b": None, "c": None}, "b": {"c": None, "a": None}, "c": {"a": None, "b": None}}
+    updated_params = {"b": None, "c": None}
+    assert set(permutation_spec.axes_to_perm.keys()) == set(model_a.model.state_dict().keys())
 
-    final_permutation = weight_matching(permutation_spec, flatten_params(model_a.model), flatten_params(model_b.model))
+    permutations["b"]["a"] = weight_matching(
+        permutation_spec, flatten_params(model_a.model), flatten_params(model_b.model)
+    )
 
-    updated_params = apply_permutation(permutation_spec, final_permutation, flatten_params(model_b.model))
+    permutations["a"]["b"] = get_inverse_permutations(permutations["b"]["a"])
+
+    updated_params["b"] = apply_permutation(permutation_spec, permutations["b"]["a"], flatten_params(model_b.model))
+
+    permutations["c"]["a"] = weight_matching(
+        permutation_spec, flatten_params(model_a.model), flatten_params(model_c.model)
+    )
+
+    updated_params["c"] = apply_permutation(permutation_spec, permutations["c"]["a"], flatten_params(model_c.model))
+
+    permutations["a"]["c"] = get_inverse_permutations(permutations["c"]["a"])
+
+    permutations["b"]["c"] = weight_matching(
+        permutation_spec, flatten_params(model_c.model), flatten_params(model_b.model)
+    )
+
+    permutations["c"]["b"] = get_inverse_permutations(permutations["b"]["c"])
 
     model_a.model.load_state_dict(model_a_orig_weights)
     model_b.model.load_state_dict(model_b_orig_weights)
+    model_c.model.load_state_dict(model_c_orig_weights)
 
     transform = instantiate(cfg.transform)
 
@@ -66,7 +89,7 @@ def run(cfg: DictConfig) -> str:
     }
 
     # clever interpolation
-    model_b.model.load_state_dict(updated_params)
+    model_b.model.load_state_dict(updated_params["b"])
 
     results_clever = evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, lambdas)
 
@@ -80,6 +103,11 @@ def run(cfg: DictConfig) -> str:
 
     fig = plot_interpolation_results(lambdas, results_naive, results_clever, metric_to_plot="loss")
     fig.savefig(loss_plot_path)
+
+
+def get_inverse_permutations(permutations):
+    # TODO
+    return permutations
 
 
 def load_model_from_info(model_info_path):
@@ -121,7 +149,7 @@ def evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, la
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_many")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

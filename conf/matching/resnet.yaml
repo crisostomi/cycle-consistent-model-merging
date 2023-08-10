@@ -9,10 +9,10 @@ depth: 22
 dataset: CIFAR10
 
 permutation_spec_builder:
-  _target_: ccmm.utils.weight_matching.ResNet20PermutationSpecBuilder
+  _target_: ccmm.matching.weight_matching.ResNet20PermutationSpecBuilder
 
 # permutation_spec_builder:
-#   _target_: ccmm.utils.weight_matching.ResNet50PermutationSpecBuilder
+#   _target_: ccmm.matching.weight_matching.ResNet50PermutationSpecBuilder
 
 datasets:
   train:
