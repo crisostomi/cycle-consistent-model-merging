@@ -39,9 +39,9 @@ transform:
 
 
 model_a_seed: 1
-model_b_seed: 2
+model_b_seed: 3
 
-num_interpolation_steps: 3
+num_interpolation_steps: 25
 
 
 batch_size: 1024
