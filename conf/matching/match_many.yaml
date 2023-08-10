@@ -6,11 +6,17 @@ dataset_path: ${oc.env:PROJECT_ROOT}/data
 model_name: MLP
 dataset: MNIST
 
-model_a_seed: 1
-model_b_seed: 2
-model_c_seed: 3
+model_symbols:
+  - a
+  - b
+  - c
 
-num_interpolation_steps: 25
+model_seed:
+  a: 1
+  b: 2
+  c: 3
+
+num_interpolation_steps: 5
 
 datasets:
   train:
@@ -41,8 +47,9 @@ transform:
 
 batch_size: 5000
 model_identifier: ${model_name}
-model_a_info_path: ${output_path}/${dataset}/${model_name}_${model_a_seed}.json
-model_b_info_path: ${output_path}/${dataset}/${model_name}_${model_b_seed}.json
-model_c_info_path: ${output_path}/${dataset}/${model_name}_${model_c_seed}.json
+model_info_path:
+  a: ${output_path}/${dataset}/${model_name}_${model_seed.a}.json
+  b: ${output_path}/${dataset}/${model_name}_${model_seed.b}.json
+  c: ${output_path}/${dataset}/${model_name}_${model_seed.c}.json
 
 results_path: ${oc.env:PROJECT_ROOT}/results/${dataset}

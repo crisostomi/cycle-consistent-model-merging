@@ -5,6 +5,7 @@ def plot_interpolation_results(
     lambdas,
     results_naive,
     results_clever,
+    results_cleverer=None,
     metric_to_plot="acc",
 ):
     fig = plt.figure()
@@ -43,6 +44,24 @@ def plot_interpolation_results(
         linewidth=2,
         label="Test, permuted interp.",
     )
+
+    if results_cleverer is not None:
+        ax.plot(
+            lambdas,
+            results_cleverer[f"train_{metric_to_plot}"],
+            linestyle="dotted",
+            color="tab:blue",
+            linewidth=2,
+            label="Train, cleverer interp.",
+        )
+        ax.plot(
+            lambdas,
+            results_cleverer[f"test_{metric_to_plot}"],
+            linestyle="dotted",
+            color="tab:orange",
+            linewidth=2,
+            label="Test, cleverer interp.",
+        )
     ax.set_xlabel(r"$\lambda$")
     ax.set_xticks([0, 1])
     ax.set_xticklabels(["Model $A$", "Model $B$"])
