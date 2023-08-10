@@ -37,7 +37,7 @@ def run(cfg: DictConfig) -> str:
     permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
-    assert list(permutation_spec.axes_to_perm.keys()) == list(model_a.model.state_dict().keys())
+    assert set(permutation_spec.axes_to_perm.keys()) == set(model_a.model.state_dict().keys())
 
     final_permutation = weight_matching(permutation_spec, flatten_params(model_a.model), flatten_params(model_b.model))
 
@@ -121,7 +121,7 @@ def evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, la
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="mlp")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

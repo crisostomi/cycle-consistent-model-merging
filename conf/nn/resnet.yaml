@@ -13,7 +13,7 @@ data:
   gpus: ${train.trainer.gpus}
 
   num_workers:
-    train: 14
+    train: 8
     val: 4
     test: 4
 

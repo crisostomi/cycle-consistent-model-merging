@@ -46,7 +46,7 @@ def plot_interpolation_results(
     ax.set_xlabel(r"$\lambda$")
     ax.set_xticks([0, 1])
     ax.set_xticklabels(["Model $A$", "Model $B$"])
-    ax.set_ylabel("Accuracy")
+    ax.set_ylabel(metric_to_plot)
     # TODO label x=0 tick as \theta_1, and x=1 tick as \theta_2
     ax.set_title(f"{metric_to_plot} between the two models")
     ax.legend(loc="lower right", framealpha=0.5)

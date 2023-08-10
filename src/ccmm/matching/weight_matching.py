@@ -230,35 +230,45 @@ class VGG16PermutationSpecBuilder(PermutationSpecBuilder):
         )
 
 
-def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=None):
-    """Get parameter `k` from `params`, with the permutations applied."""
-    w = params[k]
-    ps.axes_to_perm[k]
-    for axis, p in enumerate(ps.axes_to_perm[k]):
-        # Skip the axis we're trying to permute.
+def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
+    """Apply to the parameter `param` all the permutations computed until the current step"""
+
+    for axis, p in enumerate(perms_to_apply):
+        # skip the axis we're trying to permute
         if axis == except_axis:
             continue
 
-        # None indicates that there is no permutation relevant to that axis.
+        # None indicates that there is no permutation relevant to that axis
         if p is not None:
-            w = torch.index_select(w, axis, perm[p].int())
+            param = torch.index_select(param, axis, perm_matrices[p].int())
 
-    return w
+    return param
 
 
-def apply_permutation(ps: PermutationSpec, perm, params):
+def apply_permutation(ps: PermutationSpec, perm_matrices, all_params):
     """Apply a `perm` to `params`."""
-    return {k: get_permuted_param(ps, perm, k, params) for k in params.keys()}
+
+    permuted_params = {}
+
+    for param_name, param in all_params.items():
+        perms_to_apply = ps.axes_to_perm[param_name]
+
+        param = get_permuted_param(param, perms_to_apply, perm_matrices)
+        permuted_params[param_name] = param
+
+    return permuted_params
 
 
 def weight_matching(ps: PermutationSpec, params_a, params_b, max_iter=100, init_perm=None):
     """Find a permutation of params_b to make them match params_a."""
+
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
     perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
 
-    perm = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
+    # initialize with identity permutation if none given
+    perm_matrices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
     # e.g. P0, P1, ..
-    perm_names = list(perm.keys())
+    perm_names = list(perm_matrices.keys())
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
         progress = False
@@ -269,37 +279,131 @@ def weight_matching(ps: PermutationSpec, params_a, params_b, max_iter=100, init_
             n = perm_sizes[p]
 
             A = torch.zeros((n, n))
+            # B = torch.zeros((n, n))
+            # C = torch.zeros((n, n))
 
-            for params_name, axis in ps.perm_to_axes[p]:
+            # all the params that are permuted by this permutation matrix, together with the axis on which it acts
+            # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
+            params_and_axes = ps.perm_to_axes[p]
+
+            for params_name, axis in params_and_axes:
                 w_a = params_a[params_name]
-                w_b = get_permuted_param(ps, perm, params_name, params_b, except_axis=axis)
+                w_b = params_b[params_name]
+                # w_c = params_c[params_name]
+
+                assert w_a.shape == w_b.shape
+
+                perms_to_apply = ps.axes_to_perm[params_name]
+
+                w_b_to_a = get_permuted_param(w_b, perms_to_apply, perm_matrices, except_axis=axis)
+                # w_c_to_a = get_permuted_param(w_c, perms_to_apply, perm_matrices[-> a], except_axis=axis)
+                # w_c_to_b = get_permuted_param(w_c, perms_to_apply, perm_matrices[-> b], except_axis=axis)
+
                 w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
                 w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
+                # w_c = torch.moveaxis(w_c, axis, 0).reshape((n, -1))
+
+                A += w_a @ w_b_to_a.T
+                # B += w_a @ w_c_to_a
+                # C += w_b @ w_c_to_b
+
+            ri, ci = linear_sum_assignment(A.detach().numpy(), maximize=True)
+            # pi_b_to_a, pi_c_to_a, pi_c_to_b = alg(A, B, C)
+
+            assert (torch.tensor(ri) == torch.arange(len(ri))).all()
+
+            old_similarity = compute_weights_similarity(A, perm_matrices[p])
+
+            perm_matrices[p] = torch.Tensor(ci)
+
+            new_similarity = compute_weights_similarity(A, perm_matrices[p])
+
+            pylogger.info(f"Iteration {iteration}, Permutation {p}: {new_similarity - old_similarity}")
+
+            progress = progress or new_similarity > old_similarity + 1e-12
+
+        if not progress:
+            break
+
+    return perm_matrices
+
+
+def weight_matching(ps: PermutationSpec, params_a, params_b, max_iter=100, init_perm=None):
+    """Find a permutation of params_b to make them match params_a."""
+
+    # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
+    perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
+
+    # initialize with identity permutation if none given
+    perm_matrices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
+    # e.g. P0, P1, ..
+    perm_names = list(perm_matrices.keys())
+
+    for iteration in tqdm(range(max_iter), desc="Weight matching"):
+        progress = False
+
+        # iterate over the permutation matrices in random order
+        for p_ix in torch.randperm(len(perm_names)):
+            p = perm_names[p_ix]
+            n = perm_sizes[p]
+
+            A = torch.zeros((n, n))
+            # B = torch.zeros((n, n))
+            # C = torch.zeros((n, n))
+
+            # all the params that are permuted by this permutation matrix, together with the axis on which it acts
+            # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
+            params_and_axes = ps.perm_to_axes[p]
+
+            for params_name, axis in params_and_axes:
+                w_a = params_a[params_name]
+                w_b = params_b[params_name]
+                # w_c = params_c[params_name]
+
+                assert w_a.shape == w_b.shape
+
+                perms_to_apply = ps.axes_to_perm[params_name]
+
+                w_b = get_permuted_param(w_b, perms_to_apply, perm_matrices, except_axis=axis)
+                # w_c_to_a = get_permuted_param(w_c, perms_to_apply, perm_matrices, except_axis=axis)
+                # w_c_to_b =
+
+                w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
+                w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
+                # w_c = torch.moveaxis(w_c, axis, 0).reshape((n, -1))
 
                 A += w_a @ w_b.T
+                # B += w_a @ w_c
+                # C += w_b @ w_c
 
             ri, ci = linear_sum_assignment(A.detach().numpy(), maximize=True)
 
             assert (torch.tensor(ri) == torch.arange(len(ri))).all()
 
-            selected_rows = torch.eye(n)[perm[p].long(), :]
-            resultant_vector = (A * selected_rows).sum(dim=1)
-            oldL = resultant_vector.sum()
+            old_similarity = compute_weights_similarity(A, perm_matrices[p])
 
-            selected_rows = torch.eye(n)[ci, :]
-            resultant_vector = (A * selected_rows).sum(dim=1)
-            newL = resultant_vector.sum()
+            perm_matrices[p] = torch.Tensor(ci)
 
-            pylogger.info(f"{iteration}/{p}: {newL - oldL}")
+            new_similarity = compute_weights_similarity(A, perm_matrices[p])
 
-            progress = progress or newL > oldL + 1e-12
+            pylogger.info(f"Iteration {iteration}, Permutation {p}: {new_similarity - old_similarity}")
 
-            perm[p] = torch.Tensor(ci)
+            progress = progress or new_similarity > old_similarity + 1e-12
 
         if not progress:
             break
 
-    return perm
+    return perm_matrices
+
+
+def compute_weights_similarity(A, perm_matrix):
+    """ """
+    n = A.shape[0]
+    selected_rows = torch.eye(n)[perm_matrix.long(), :]
+    resultant_vector = (A * selected_rows).sum(dim=1)
+    similarity = resultant_vector.sum()
+
+    return similarity
 
 
 def test_weight_matching():
