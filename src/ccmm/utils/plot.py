@@ -52,7 +52,7 @@ def plot_interpolation_results(
             linestyle="dotted",
             color="tab:blue",
             linewidth=2,
-            label="Train, cleverer interp.",
+            label="Train, synchronized perm interp.",
         )
         ax.plot(
             lambdas,
@@ -60,7 +60,7 @@ def plot_interpolation_results(
             linestyle="dotted",
             color="tab:orange",
             linewidth=2,
-            label="Test, cleverer interp.",
+            label="Test, synchronized perm interp.",
         )
     ax.set_xlabel(r"$\lambda$")
     ax.set_xticks([0, 1])

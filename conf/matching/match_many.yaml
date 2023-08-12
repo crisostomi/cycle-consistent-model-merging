@@ -6,17 +6,21 @@ dataset_path: ${oc.env:PROJECT_ROOT}/data
 model_name: MLP
 dataset: MNIST
 
+sync_method: 'spectral' # 'stiefel', 'spectral', 'nmfSync'
+
 model_symbols:
   - a
   - b
   - c
+  # - d
 
 model_seed:
   a: 1
   b: 2
   c: 3
+  # d: 4
 
-num_interpolation_steps: 5
+num_interpolation_steps: 3
 
 datasets:
   train:
@@ -51,5 +55,6 @@ model_info_path:
   a: ${output_path}/${dataset}/${model_name}_${model_seed.a}.json
   b: ${output_path}/${dataset}/${model_name}_${model_seed.b}.json
   c: ${output_path}/${dataset}/${model_name}_${model_seed.c}.json
+  # d: ${output_path}/${dataset}/${model_name}_${model_seed.d}.json
 
 results_path: ${oc.env:PROJECT_ROOT}/results/${dataset}
