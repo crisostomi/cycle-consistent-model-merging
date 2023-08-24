@@ -18,9 +18,9 @@ data:
     test: 4
 
   batch_size:
-    train: 1024
-    val: 512
-    test: 512
+    train: 256
+    val: 128
+    test: 128
 
 module:
   _target_: ccmm.pl_modules.pl_module.MyLightningModule
@@ -30,7 +30,7 @@ module:
     _target_: ccmm.models.resnet.ResNet
     depth: 22 # 22 or 50
     num_classes: 10
-    widen_factor: 2 #
+    widen_factor: 16 # 2, 32 by git re-basin
 
   optimizer:
     _target_: torch.optim.SGD

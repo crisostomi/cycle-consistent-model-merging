@@ -1,24 +1,26 @@
-seed_index: 0
+seed_index: 1
 
 output_path: ${oc.env:PROJECT_ROOT}/output
 dataset_path: ${oc.env:PROJECT_ROOT}/data
+
+dummy_permutations: True
 
 model_name: MLP
 dataset: MNIST
 
 sync_method: 'spectral' # 'stiefel', 'spectral', 'nmfSync'
 
-model_symbols:
-  - a
-  - b
-  - c
-  # - d
+model_seeds:
+  - 1
+  - dummy_b
+  - dummy_c
+  # - 4
+  # - 5
 
-model_seed:
-  a: 1
-  b: 2
-  c: 3
-  # d: 4
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: 1
+  precision: 32
 
 num_interpolation_steps: 3
 
@@ -50,11 +52,12 @@ transform:
         std: [0.3081]
 
 batch_size: 5000
-model_identifier: ${model_name}
-model_info_path:
-  a: ${output_path}/${dataset}/${model_name}_${model_seed.a}.json
-  b: ${output_path}/${dataset}/${model_name}_${model_seed.b}.json
-  c: ${output_path}/${dataset}/${model_name}_${model_seed.c}.json
-  # d: ${output_path}/${dataset}/${model_name}_${model_seed.d}.json
+num_workers: 14
 
-results_path: ${oc.env:PROJECT_ROOT}/results/${dataset}
+model_identifier: ${model_name}
+model_info_path: ${output_path}/${dataset}/${model_name}
+
+permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset}/match_then_sync/${sync_method}/}
+results_path: ${path:${oc.env:PROJECT_ROOT}/results/${dataset}/match_then_sync/${sync_method}/}
+
+dummy_permutations_path: ${output_path}/${dataset}/
