@@ -54,13 +54,14 @@ def run(cfg: DictConfig) -> str:
     permutations = load_permutations(cfg.permutations_path / "permutations.json")
     sync_permutations = load_permutations(cfg.permutations_path / "sync_permutations.json")
 
-    for source, target in all_combinations:
-        sync_updated_params[source][target] = apply_permutation(
-            permutation_spec, sync_permutations[source][target], models[source].model.state_dict()
+    for fixed, permutee in all_combinations:
+        # sync_perms[a, b] maps b -> a
+        sync_updated_params[fixed][permutee] = apply_permutation(
+            permutation_spec, sync_permutations[fixed][permutee], models[permutee].model.state_dict()
         )
         restore_original_weights(models, model_orig_weights)
-        updated_params[source][target] = apply_permutation(
-            permutation_spec, permutations[source][target], models[source].model.state_dict()
+        updated_params[fixed][permutee] = apply_permutation(
+            permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )
         restore_original_weights(models, model_orig_weights)
 
@@ -75,25 +76,25 @@ def run(cfg: DictConfig) -> str:
     lambdas = torch.linspace(0, 1, steps=cfg.num_interpolation_steps)
 
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
-    canonical_combinations = [(source, target) for (source, target) in all_combinations if source < target]
+    canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
 
-    for source, target in canonical_combinations:
+    for fixed, permutee in canonical_combinations:
         restore_original_weights(models, model_orig_weights)
         evaluate_pair_of_models(
-            models, source, target, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg
+            models, fixed, permutee, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg
         )
 
 
 def evaluate_pair_of_models(
-    models, model_a_id, model_b_id, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg
+    models, fixed_id, permutee_id, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg
 ):
-    model_a = models[model_a_id]
-    model_b = models[model_b_id]
+    fixed_model = models[fixed_id]
+    permutee_model = models[permutee_id]
 
     # synchronized interpolation
-    model_b.model.load_state_dict(sync_updated_params[model_b_id][model_a_id])
+    permutee_model.model.load_state_dict(sync_updated_params[fixed_id][permutee_id])
 
-    results_sync = evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, lambdas, cfg)
+    results_sync = evaluate_interpolated_models(fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg)
 
     # naive interpolation
     # results_naive = evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, lambdas)
@@ -105,15 +106,15 @@ def evaluate_pair_of_models(
     }
 
     # clever interpolation
-    model_b.model.load_state_dict(updated_params[model_b_id][model_a_id])
+    permutee_model.model.load_state_dict(updated_params[fixed_id][permutee_id])
 
-    results_clever = evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, lambdas, cfg)
+    results_clever = evaluate_interpolated_models(fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg)
 
     acc_plot_path = Path(
-        f"{cfg.results_path}/{cfg.model_identifier}_acc_{model_a_id}_{model_b_id}_{cfg.sync_method}.png"
+        f"{cfg.results_path}/{cfg.model_identifier}_acc_{fixed_id}_{permutee_id}_{cfg.sync_method}.png"
     )
     loss_plot_path = Path(
-        f"{cfg.results_path}/{cfg.model_identifier}_loss_{model_a_id}_{model_b_id}_{cfg.sync_method}.png"
+        f"{cfg.results_path}/{cfg.model_identifier}_loss_{fixed_id}_{permutee_id}_{cfg.sync_method}.png"
     )
 
     acc_plot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,12 +126,12 @@ def evaluate_pair_of_models(
     fig.savefig(loss_plot_path)
 
 
-def evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, lambdas, cfg):
-    model_a = model_a.cuda()
-    model_b = model_b.cuda()
+def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):
+    fixed = fixed.cuda()
+    permutee = permutee.cuda()
 
-    model_a_dict = copy.deepcopy(model_a.model.state_dict())
-    model_b_dict = copy.deepcopy(model_b.model.state_dict())
+    fixed_dict = copy.deepcopy(fixed.model.state_dict())
+    permutee_dict = copy.deepcopy(permutee.model.state_dict())
 
     results = {
         "train_acc": [],
@@ -141,15 +142,15 @@ def evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, la
     trainer = instantiate(cfg.trainer)
 
     for lam in tqdm(lambdas):
-        interpolated_params = linear_interpolation(lam, model_a_dict, model_b_dict)
-        model_b.model.load_state_dict(interpolated_params)
+        interpolated_params = linear_interpolation(lam, fixed_dict, permutee_dict)
+        permutee.model.load_state_dict(interpolated_params)
 
-        train_results = trainer.test(model_b, train_loader)
+        train_results = trainer.test(permutee, train_loader)
 
         results["train_acc"].append(train_results[0]["acc/test"])
         results["train_loss"].append(train_results[0]["loss/test"])
 
-        test_results = trainer.test(model_b, test_loader)
+        test_results = trainer.test(permutee, test_loader)
 
         results["test_acc"].append(test_results[0]["acc/test"])
         results["test_loss"].append(test_results[0]["loss/test"])
@@ -157,7 +158,7 @@ def evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, la
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync_resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_then_sync_resnet")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
