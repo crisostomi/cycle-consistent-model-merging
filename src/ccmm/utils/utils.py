@@ -69,13 +69,6 @@ def build_callbacks(cfg: ListConfig, *args: Callback) -> List[Callback]:
 
     return callbacks
 
-    # class ChangeScheduler(Callback):
-
-    #     def on_train_epoch_start(self, trainer. pl_module, scheduler):
-    #         if trainer.current_epoch = 1:
-    #             trainer.lr_schedulers = trainer.configure_schedulers([new_schedulers])
-    #             trainer.optimizer_frequencies = []
-
 
 def block(i, j, n):
     return slice(i * n, (i + 1) * n), slice(j * n, (j + 1) * n)

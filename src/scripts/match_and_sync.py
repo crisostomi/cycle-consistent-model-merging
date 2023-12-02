@@ -29,6 +29,9 @@ pylogger = logging.getLogger(__name__)
 def run(cfg: DictConfig) -> str:
     seed_index_everything(cfg)
 
+    if not cfg.sync_method:
+        pylogger.warning("Only using naive and git re-basin methods.")
+
     # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
@@ -56,12 +59,6 @@ def run(cfg: DictConfig) -> str:
 
     assert set(permutation_spec.axes_to_perm.keys()) == set(models["a"].model.state_dict().keys())
 
-    symbols = sorted(list(symbols))
-
-    sync_permutations = synchronized_weight_matching(
-        models, permutation_spec, method=cfg.sync_method, symbols=symbols, combinations=all_combinations
-    )
-
     restore_original_weights(models, model_orig_weights)
 
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
@@ -80,22 +77,23 @@ def run(cfg: DictConfig) -> str:
 
         check_permutations_are_valid(permutations[fixed][permutee], permutations[permutee][fixed])
 
+    symbols_seq = sorted(list(symbols))
+
+    if cfg.sync_method is not None:
+        sync_permutations = synchronized_weight_matching(
+            models, permutation_spec, method=cfg.sync_method, symbols=symbols_seq, combinations=all_combinations
+        )
+    else:
+        sync_permutations = copy.deepcopy(permutations)
+
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
     save_permutations(sync_permutations, cfg.permutations_path / "sync_permutations.json")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="git_rebasin")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
 
 if __name__ == "__main__":
     main()
-
-
-# 1. run the synchronization algorithm
-# C -> A check
-# B -> A check
-# C -> B X
-
-# 2.
