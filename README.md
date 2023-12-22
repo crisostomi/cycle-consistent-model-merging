@@ -8,20 +8,7 @@
     <a href="https://black.readthedocs.io/en/stable/"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </p>
 
-A new awesome project.
-
-
-## Installation
-
-```bash
-pip install git+ssh://git@github.com/crisostomi/cycle-consistent-model-merging.git
-```
-
-
-## Quickstart
-
-[comment]: <> (> Fill me!)
-
+Merging models in a cycle-consistent fashion.
 
 ## Development installation
 
@@ -42,7 +29,6 @@ pre-commit run --all-files
 pytest -v
 ```
 
-
 ### Update the dependencies
 
 Re-install the project in edit mode:
@@ -50,3 +36,14 @@ Re-install the project in edit mode:
 ```bash
 pip install -e .[dev]
 ```
+
+## Usage
+
+### Git-Rebasin
+
+All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use.
+
+1. train your models using `train.py`, making sure to change the random seed so to have two different modes
+2. get the permutations to align the two models (identified by their seed in the config) using `match_and_sync.py` with config `git_rebasin``
+3. evaluate the interpolation of the models using `evaluate_matched_models.py` and the same config used for the previous step.
+4. results are found in `results/${dataset}/match_and_sync/None`

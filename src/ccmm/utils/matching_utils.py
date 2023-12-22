@@ -1,3 +1,4 @@
+import copy
 import itertools
 from typing import Dict, List, Set, Tuple
 
@@ -24,7 +25,7 @@ def restore_original_weights(models: Dict[str, LightningModule], original_weight
     """
 
     for model_id, model in models.items():
-        model.model.load_state_dict(original_weights[model_id])
+        model.model.load_state_dict(copy.deepcopy(original_weights[model_id]))
 
 
 def get_all_symbols_combinations(symbols: Set[str]) -> List[Tuple[str, str]]:
@@ -35,7 +36,7 @@ def get_all_symbols_combinations(symbols: Set[str]) -> List[Tuple[str, str]]:
     :return: A list of all possible permutations of two symbols, e.g. [("a", "b"), ("a", "c"), ("b", "a"), ("b", "c"), ("c", "a"), ("c", "b")].
     """
     combinations = list(itertools.permutations(symbols, 2))
-    sorted_combinations = sorted(combinations, key=lambda x: x[0])
+    sorted_combinations = sorted(combinations)
     return sorted_combinations
 
 
@@ -220,5 +221,11 @@ def parse_three_models_sync_matrix(sync_matrix, n, symbols, combinations):
 
     sync_perm_matrices[(b, c)] = sync_matrix[block(1, 2, n)]
     sync_perm_matrices[(c, b)] = sync_matrix[block(2, 1, n)]
+
+    P_BC = sync_perm_matrices[(b, c)]
+    P_CA = sync_perm_matrices[(c, a)]
+    P_AB = sync_perm_matrices[(a, b)]
+
+    assert torch.all(P_BC @ P_CA @ P_AB == torch.eye(n))
 
     return sync_perm_matrices

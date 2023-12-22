@@ -23,21 +23,26 @@ from ccmm.utils.utils import load_model_from_info, map_model_seed_to_symbol, sav
 
 pylogger = logging.getLogger(__name__)
 
+# ASSUMPTION: P[a][b] refers to the permutation/params to map b -> a
+
 
 def run(cfg: DictConfig) -> str:
     seed_index_everything(cfg)
+
+    if not cfg.sync_method:
+        pylogger.warning("Only using naive and git re-basin methods.")
 
     # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
 
     # {a: 1, b: 2, c: 3, ..}
-    symbols_to_seed = {map_model_seed_to_symbol(seed): seed for seed in model_seeds}
+    symbols_to_seed: Dict[int, str] = {map_model_seed_to_symbol(seed): seed for seed in model_seeds}
 
     # {a, b, c, ..}
     symbols = set(symbols_to_seed.keys())
 
-    # (a, b), (a, c), (b, c), ...
+    # (a, b), (a, c), (b, c), ... sorted first by first element, then by second element
     all_combinations = get_all_symbols_combinations(symbols)
 
     models: Dict[str, LightningModule] = {
@@ -49,40 +54,43 @@ def run(cfg: DictConfig) -> str:
     permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
-    # dicts for permutations and permuted params, D[a][b] refers to the permutation/params to map a -> b
+    # dicts for permutations and permuted params, D[a][b] refers to the permutation/params to map b -> a
     permutations = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
     assert set(permutation_spec.axes_to_perm.keys()) == set(models["a"].model.state_dict().keys())
 
-    symbols = sorted(list(symbols))
-
-    sync_permutations = synchronized_weight_matching(
-        models, permutation_spec, method=cfg.sync_method, symbols=symbols, combinations=all_combinations
-    )
-
     restore_original_weights(models, model_orig_weights)
 
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
-    canonical_combinations = [(source, target) for (source, target) in all_combinations if source < target]
+    canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
 
-    for source, target in canonical_combinations:
-        permutations[source][target] = weight_matching(
+    for fixed, permutee in canonical_combinations:
+        permutations[fixed][permutee] = weight_matching(
             permutation_spec,
-            target=models[target].model.state_dict(),
-            to_permute=models[source].model.state_dict(),
+            fixed=models[fixed].model.state_dict(),
+            to_permute=models[permutee].model.state_dict(),
         )
 
-        permutations[target][source] = get_inverse_permutations(permutations[source][target])
+        permutations[permutee][fixed] = get_inverse_permutations(permutations[fixed][permutee])
 
         restore_original_weights(models, model_orig_weights)
 
-        check_permutations_are_valid(permutations[source][target], permutations[target][source])
+        check_permutations_are_valid(permutations[fixed][permutee], permutations[permutee][fixed])
+
+    symbols_seq = sorted(list(symbols))
+
+    if cfg.sync_method is not None:
+        sync_permutations = synchronized_weight_matching(
+            models, permutation_spec, method=cfg.sync_method, symbols=symbols_seq, combinations=all_combinations
+        )
+    else:
+        sync_permutations = copy.deepcopy(permutations)
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
     save_permutations(sync_permutations, cfg.permutations_path / "sync_permutations.json")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync_resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="git_rebasin")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

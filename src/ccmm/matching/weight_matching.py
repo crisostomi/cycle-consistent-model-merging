@@ -274,13 +274,13 @@ def apply_permutation(ps: PermutationSpec, perm_matrices, all_params):
         param = copy.deepcopy(param)
         perms_to_apply = ps.axes_to_perm[param_name]
 
-        permuted_param = get_permuted_param(param, perms_to_apply, perm_matrices)
-        permuted_params[param_name] = permuted_param
+        param = get_permuted_param(param, perms_to_apply, perm_matrices)
+        permuted_params[param_name] = param
 
     return permuted_params
 
 
-def weight_matching(ps: PermutationSpec, target: ModelParams, to_permute: ModelParams, max_iter=100, init_perm=None):
+def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelParams, max_iter=100, init_perm=None):
     """
     Find a permutation of params_b to make them match params_a.
 
@@ -288,7 +288,8 @@ def weight_matching(ps: PermutationSpec, target: ModelParams, to_permute: ModelP
     :param target: the parameters to match
     :param to_permute: the parameters to permute
     """
-    params_a, params_b = target, to_permute
+    params_a, params_b = fixed, to_permute
+
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
     perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
 
@@ -305,11 +306,11 @@ def weight_matching(ps: PermutationSpec, target: ModelParams, to_permute: ModelP
             p = perm_names[p_ix]
             n = perm_sizes[p]
 
-            A = torch.zeros((n, n))
+            sim_matrix = torch.zeros((n, n))
 
             # all the params that are permuted by this permutation matrix, together with the axis on which it acts
             # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
-            params_and_axes = ps.perm_to_axes[p]
+            params_and_axes: List[Tuple[str, int]] = ps.perm_to_axes[p]
 
             for params_name, axis in params_and_axes:
                 w_a = params_a[params_name]
@@ -324,17 +325,17 @@ def weight_matching(ps: PermutationSpec, target: ModelParams, to_permute: ModelP
                 w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
                 w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
 
-                A += w_a @ w_b.T
+                sim_matrix += w_a @ w_b.T
 
-            ri, ci = linear_sum_assignment(A.detach().numpy(), maximize=True)
+            ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
 
             assert (torch.tensor(ri) == torch.arange(len(ri))).all()
 
-            old_similarity = compute_weights_similarity(A, perm_indices[p])
+            old_similarity = compute_weights_similarity(sim_matrix, perm_indices[p])
 
             perm_indices[p] = torch.Tensor(ci)
 
-            new_similarity = compute_weights_similarity(A, perm_indices[p])
+            new_similarity = compute_weights_similarity(sim_matrix, perm_indices[p])
 
             pylogger.info(f"Iteration {iteration}, Permutation {p}: {new_similarity - old_similarity}")
 
@@ -347,22 +348,22 @@ def weight_matching(ps: PermutationSpec, target: ModelParams, to_permute: ModelP
 
 
 def compute_weights_similarity(similarity_matrix, perm_indices):
-    """ """
+    """
+    similarity_matrix: matrix s.t. S[i, j] = w_a[i] @ w_b[j]
 
-    # perm_matrix = perm_indices_to_perm_matrix(perm_indices)
+    we sum over the cells identified by perm_indices, i.e. S[i, perm_indices[i]] for all i
+    """
 
-    # permuted_similarity_matrix = similarity_matrix @ perm_matrix
-    # similarity = torch.trace(permuted_similarity_matrix)
+    n = len(perm_indices)
 
-    # this is what they do in the original git re-basin code
-    similarity = similarity_matrix.reshape(-1) @ torch.eye(len(perm_indices))[perm_indices.long()].reshape(-1)
+    similarity = torch.sum(similarity_matrix[torch.arange(n), perm_indices.long()])
 
     return similarity
 
 
 def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, combinations, max_iter=100):
     """
-    Find a permutation of params_b to make them match params_a.
+    Find a permutation to make the params in `models` match.
 
     :param ps: PermutationSpec
     :param target: the parameters to match
@@ -375,7 +376,8 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
     perm_sizes = {p: params[a][axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
 
-    # {'a': {'b': 'P0': P_AB_0, 'c': ....}, .... }
+    # {'a': {'b': 'P0': P_AB_0, 'c': ....}, .... }. N.B. it's unsorted. P[a][b] refers to the permutation to map b -> a
+    # i.e. P[fixed][permutee] maps permutee to fixed target
     symbol_set = set(symbols)
     perm_indices = {
         symb: {
@@ -386,7 +388,6 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
     }
 
     # e.g. P0, P1, ..
-
     perm_names = list(perm_indices[a][b].keys())
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
@@ -397,7 +398,7 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
             p = perm_names[p_ix]
             n = perm_sizes[p]
 
-            # a, b in similarities[a][b] follow the notation P_AB i.e. the permutation to map B to A
+            # a, b in similarities[a][b] are such that the permutation maps B to A
             similarities = {
                 symb: {other_symb: torch.zeros((n, n)) for other_symb in symbol_set.difference(symb)}
                 for symb in symbol_set
@@ -408,37 +409,48 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
             params_and_axes = ps.perm_to_axes[p]
 
             for params_name, axis in params_and_axes:
-                w_a = params[a][params_name]
-                w_b = params[b][params_name]
-                w_c = params[c][params_name]
+                w_a = copy.deepcopy(params[a][params_name])
+                w_b = copy.deepcopy(params[b][params_name])
+                w_c = copy.deepcopy(params[c][params_name])
 
                 assert w_a.shape == w_b.shape and w_b.shape == w_c.shape
 
                 perms_to_apply = ps.axes_to_perm[params_name]
 
-                w_b_a = get_permuted_param(w_b, perms_to_apply, perm_indices[b][a], except_axis=axis)
-                w_c_a = get_permuted_param(w_c, perms_to_apply, perm_indices[c][a], except_axis=axis)
-                w_c_b = get_permuted_param(w_c, perms_to_apply, perm_indices[c][b], except_axis=axis)
+                # ASSUMPTION: given A, B, we always permute B to match A
+
+                # w_b_a are the weights of A permuted to match B
+                w_a_b = get_permuted_param(w_b, perms_to_apply, perm_indices[a][b], except_axis=axis)
+                w_a_c = get_permuted_param(w_c, perms_to_apply, perm_indices[a][c], except_axis=axis)
+                w_b_c = get_permuted_param(w_c, perms_to_apply, perm_indices[b][c], except_axis=axis)
 
                 w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
                 w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
-                w_b_a = torch.moveaxis(w_b_a, axis, 0).reshape((n, -1))
-                w_c_a = torch.moveaxis(w_c_a, axis, 0).reshape((n, -1))
-                w_c_b = torch.moveaxis(w_c_b, axis, 0).reshape((n, -1))
+                w_c = torch.moveaxis(w_c, axis, 0).reshape((n, -1))
+                w_a_b = torch.moveaxis(w_a_b, axis, 0).reshape((n, -1))
+                w_a_c = torch.moveaxis(w_a_c, axis, 0).reshape((n, -1))
+                w_b_c = torch.moveaxis(w_b_c, axis, 0).reshape((n, -1))
 
-                similarities[b][a] += w_b_a @ w_a.T
-                similarities[c][a] += w_c_a @ w_a.T
-                similarities[c][b] += w_c_b @ w_b.T
+                # similarity of the original weights (e.g. w_a) with the permuted ones (e.g. w_a_b)
+                similarities[a][b] += w_a @ w_a_b.T
+                similarities[a][c] += w_a @ w_a_c.T
+                similarities[b][c] += w_b @ w_b_c.T
 
-            similarities[a][b] = similarities[b][a].T
-            similarities[a][c] = similarities[c][a].T
-            similarities[b][c] = similarities[c][b].T
+            similarities[b][a] = similarities[a][b].T
+            similarities[c][a] = similarities[a][c].T
+            similarities[c][b] = similarities[b][c].T
 
             canonical_combinations = [(a, b), (a, c), (b, c)]
 
             old_similarity = 0.0
-            for source, target in canonical_combinations:
-                pairwise_sim = compute_weights_similarity(similarities[target][source], perm_indices[target][source][p])
+
+            pylogger.info("old pairwise similarities")
+            for fixed, permutee in canonical_combinations:
+                # e.g. canonical combination is (a, b) then b is permutee and a is fixed, i.e. b -> a
+                pairwise_sim = compute_weights_similarity(
+                    similarities[fixed][permutee], perm_indices[fixed][permutee][p]
+                )
+                pylogger.info(f"\t fixed: {fixed}, permutee: {permutee}, pairwise_sim: {pairwise_sim}")
                 old_similarity += pairwise_sim
 
             uber_matrix = three_models_uber_matrix(
@@ -447,20 +459,25 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
 
             sync_matrix = optimize_synchronization(uber_matrix, n, method)
 
-            sync_perm_indices = parse_three_models_sync_matrix(sync_matrix, n, symbols, combinations)
+            sync_perm_matrices = parse_three_models_sync_matrix(sync_matrix, n, symbols, combinations)
 
-            for source, target in canonical_combinations:
-                perm_indices[source][target][p] = perm_matrix_to_perm_indices(sync_perm_indices[(source, target)])
-                perm_indices[target][source][p] = perm_indices[source][target][p].T
+            for fixed, permutee in canonical_combinations:
+                P_fixed_permutee = sync_perm_matrices[(fixed, permutee)]
+                perm_indices[fixed][permutee][p] = perm_matrix_to_perm_indices(P_fixed_permutee)
+                perm_indices[permutee][fixed][p] = perm_matrix_to_perm_indices(P_fixed_permutee.T)
 
             new_similarity = 0.0
-            for source, target in canonical_combinations:
-                pairwise_sim = compute_weights_similarity(similarities[target][source], perm_indices[target][source][p])
+            pylogger.info("new pairwise similarities")
+            for fixed, permutee in canonical_combinations:
+                pairwise_sim = compute_weights_similarity(
+                    similarities[fixed][permutee], perm_indices[fixed][permutee][p]
+                )
+                pylogger.info(f"\t fixed: {fixed}, permutee: {permutee}, pairwise_sim: {pairwise_sim}")
                 new_similarity += pairwise_sim
 
             pylogger.info(f"Iteration {iteration}, Permutation {p}: {(new_similarity - old_similarity)}")
 
-            progress = progress or torch.any(new_similarity > old_similarity + 1e-12)
+            progress = progress or new_similarity > old_similarity + 1e-12
 
         if not progress:
             break
