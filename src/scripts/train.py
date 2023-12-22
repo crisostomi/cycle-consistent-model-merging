@@ -89,7 +89,7 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
