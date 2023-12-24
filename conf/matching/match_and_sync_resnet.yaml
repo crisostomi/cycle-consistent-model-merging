@@ -20,7 +20,7 @@ use_alternate_diffusion: true
 model_seeds:
   - 1
   - 2
-  - 3
+  # - 3
   # - 4
   # - 5
 
