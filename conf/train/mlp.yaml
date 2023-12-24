@@ -1,4 +1,4 @@
-seed_index: 2
+seed_index: 3
 deterministic: False
 
 # PyTorch Lightning Trainer https://pytorch-lightning.readthedocs.io/en/stable/common/trainer.html

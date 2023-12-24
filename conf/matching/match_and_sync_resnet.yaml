@@ -14,7 +14,8 @@ trainer:
   gpus: 1
   precision: 32
 
-sync_method: 'spectral' # 'stiefel', 'spectral', 'nmfSync'
+sync_method: null # 'stiefel', 'spectral', 'nmfSync'
+use_alternate_diffusion: true
 
 model_seeds:
   - 1

@@ -1,3 +1,5 @@
+# alignment of 2 ResNets
+
 seed_index: 1
 
 output_path: ${oc.env:PROJECT_ROOT}/output

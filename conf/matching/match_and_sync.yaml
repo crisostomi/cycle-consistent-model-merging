@@ -6,13 +6,13 @@ dataset_path: ${oc.env:PROJECT_ROOT}/data
 model_name: MLP
 dataset: MNIST
 
-
 trainer:
   _target_: pytorch_lightning.Trainer
   gpus: 1
   precision: 32
 
-sync_method: 'spectral' # 'stiefel', 'spectral', 'nmfSync'
+sync_method: null # 'stiefel', 'spectral', 'nmfSync'
+use_alternate_diffusion: true
 
 model_seeds:
   - 1

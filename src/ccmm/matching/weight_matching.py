@@ -15,6 +15,7 @@ from nn_core.common import PROJECT_ROOT
 from ccmm.utils.matching_utils import (
     PermutationMatrix,
     parse_three_models_sync_matrix,
+    perm_indices_to_perm_matrix,
     perm_matrix_to_perm_indices,
     three_models_uber_matrix,
 )
@@ -280,7 +281,14 @@ def apply_permutation(ps: PermutationSpec, perm_matrices, all_params):
     return permuted_params
 
 
-def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelParams, max_iter=100, init_perm=None):
+def weight_matching(
+    ps: PermutationSpec,
+    fixed: ModelParams,
+    to_permute: ModelParams,
+    max_iter=1000,
+    init_perm=None,
+    use_alternate_diffusion=False,
+):
     """
     Find a permutation of params_b to make them match params_a.
 
@@ -288,6 +296,7 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
     :param target: the parameters to match
     :param to_permute: the parameters to permute
     """
+    temperature = 1
     params_a, params_b = fixed, to_permute
 
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
@@ -304,9 +313,11 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
         # iterate over the permutation matrices in random order
         for p_ix in torch.randperm(len(perm_names)):
             p = perm_names[p_ix]
-            n = perm_sizes[p]
+            num_neurons = perm_sizes[p]
 
-            sim_matrix = torch.zeros((n, n))
+            sim_matrix = torch.zeros((num_neurons, num_neurons))
+            sim_aa = torch.zeros((num_neurons, num_neurons))
+            sim_bb = torch.zeros((num_neurons, num_neurons))
 
             # all the params that are permuted by this permutation matrix, together with the axis on which it acts
             # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
@@ -322,12 +333,34 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
 
                 w_b = get_permuted_param(w_b, perms_to_apply, perm_indices, except_axis=axis)
 
-                w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
-                w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
+                w_a = torch.moveaxis(w_a, axis, 0).reshape((num_neurons, -1))
+                w_b = torch.moveaxis(w_b, axis, 0).reshape((num_neurons, -1))
 
                 sim_matrix += w_a @ w_b.T
 
-            ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
+                # alternating diffusion
+                sim_aa += torch.exp(-torch.cdist(w_a, w_a) / temperature)  # w_a @ w_a.T #
+                sim_bb += torch.exp(-torch.cdist(w_b, w_b) / temperature)  # w_b @ w_b.T #
+
+            if use_alternate_diffusion:
+                sim_aa = sim_aa / sim_aa.sum(dim=1, keepdim=True)
+                sim_bb = sim_bb / sim_bb.sum(dim=1, keepdim=True)
+
+                K = 10
+                var_percentage = 0.2
+                for k in range(K):
+                    ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
+                    var_b = sim_bb.max() * var_percentage
+                    var_a = sim_aa.max() * var_percentage
+
+                    perm_matrix = perm_indices_to_perm_matrix(torch.tensor(ci))
+                    sim_bb_perm = sim_bb @ perm_matrix.t()
+                    kernel_B = torch.exp(-(sim_bb_perm).pow(2) / (2 * var_b))
+                    kernel_A = torch.exp(-(sim_aa).pow(2) / (2 * var_a))
+                    sim_matrix = torch.exp(-torch.cdist(kernel_A, kernel_B))  # kernel_A @ kernel_B.T #
+
+            else:
+                ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
 
             assert (torch.tensor(ri) == torch.arange(len(ri))).all()
 

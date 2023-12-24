@@ -55,9 +55,7 @@ def run(cfg: DictConfig) -> str:
     permutation_spec = permutation_spec_builder.create_permutation()
 
     permutations = load_permutations(cfg.permutations_path / "permutations.json")
-    sync_permutations = (
-        load_permutations(cfg.permutations_path / "sync_permutations.json") if cfg.sync_method else permutations
-    )
+    sync_permutations = load_permutations(cfg.permutations_path / "improved_permutations.json")
 
     for fixed, permutee in all_combinations:
         # sync_perms[a, b] maps b -> a
@@ -163,7 +161,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="git_rebasin")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync_resnet")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

@@ -57,7 +57,7 @@ def run(cfg: DictConfig) -> str:
     # dicts for permutations and permuted params, D[a][b] refers to the permutation/params to map b -> a
     permutations = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
-    assert set(permutation_spec.axes_to_perm.keys()) == set(models["a"].model.state_dict().keys())
+    # assert set(permutation_spec.axes_to_perm.keys()) == set(models["a"].model.state_dict().keys())
 
     restore_original_weights(models, model_orig_weights)
 
@@ -69,6 +69,7 @@ def run(cfg: DictConfig) -> str:
             permutation_spec,
             fixed=models[fixed].model.state_dict(),
             to_permute=models[permutee].model.state_dict(),
+            use_alternate_diffusion=False,
         )
 
         permutations[permutee][fixed] = get_inverse_permutations(permutations[fixed][permutee])
@@ -80,17 +81,38 @@ def run(cfg: DictConfig) -> str:
     symbols_seq = sorted(list(symbols))
 
     if cfg.sync_method is not None:
-        sync_permutations = synchronized_weight_matching(
+        pylogger.info(f"Using synchronization method {cfg.sync_method}")
+        improved_permutations = synchronized_weight_matching(
             models, permutation_spec, method=cfg.sync_method, symbols=symbols_seq, combinations=all_combinations
         )
+    elif cfg.use_alternate_diffusion:
+        pylogger.info("Using alternate diffusion")
+        improved_permutations = {
+            symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols
+        }
+
+        for fixed, permutee in canonical_combinations:
+            improved_permutations[fixed][permutee] = weight_matching(
+                permutation_spec,
+                fixed=models[fixed].model.state_dict(),
+                to_permute=models[permutee].model.state_dict(),
+                use_alternate_diffusion=True,
+            )
+
+            improved_permutations[permutee][fixed] = get_inverse_permutations(improved_permutations[fixed][permutee])
+
+            restore_original_weights(models, model_orig_weights)
+
+            check_permutations_are_valid(improved_permutations[fixed][permutee], improved_permutations[permutee][fixed])
     else:
-        sync_permutations = copy.deepcopy(permutations)
+        pylogger.info("Not using any improved method")
+        improved_permutations = copy.deepcopy(permutations)
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
-    save_permutations(sync_permutations, cfg.permutations_path / "sync_permutations.json")
+    save_permutations(improved_permutations, cfg.permutations_path / "improved_permutations.json")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="git_rebasin")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync_resnet")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

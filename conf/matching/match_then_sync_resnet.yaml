@@ -18,7 +18,7 @@ sync_method: 'stiefel' # 'stiefel', 'spectral', 'nmfSync'
 model_seeds:
   - 1
   - 2
-  - 3
+  # - 3
 
 num_interpolation_steps: 3
 
