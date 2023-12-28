@@ -121,7 +121,7 @@ def evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, la
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="mlp")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="mlp", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

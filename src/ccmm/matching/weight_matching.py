@@ -287,7 +287,7 @@ def weight_matching(
     to_permute: ModelParams,
     max_iter=100,
     init_perm=None,
-    use_alternate_diffusion=False,
+    alternate_diffusion_params=None,
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -338,31 +338,30 @@ def weight_matching(
                 sim_matrix += w_a @ w_b.T
 
                 # alternating diffusion
+                dist_aa += torch.cdist(w_a, w_a)
+                dist_bb += torch.cdist(w_b, w_b)
 
-                # goes to 0 as the distance grows larger
-                # we want sim to be large
-                dist_aa += torch.cdist(w_a, w_a)  # w_a @ w_a.T #
-                dist_bb += torch.cdist(w_b, w_b)  # w_b @ w_b.T #
+            if alternate_diffusion_params:
 
-            if use_alternate_diffusion:
-                # row_norm_sim_aa = sim_aa / sim_aa.sum(dim=1, keepdim=True)
-                # sim_aa = row_norm_sim_aa / sim_aa.sum(dim=0, keepdim=True)
+                var_percentage = alternate_diffusion_params.var_percentage
+                K = alternate_diffusion_params.num_diffusion_steps
 
-                # row_norm_sim_bb = sim_bb / sim_bb.sum(dim=1, keepdim=True)
-                # sim_bb = row_norm_sim_bb / sim_bb.sum(dim=0, keepdim=True)
-
-                K = 10
-                var_percentage = 0.5
                 for k in range(K):
+
                     ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
-                    var_b = dist_bb.max() * var_percentage * ((K - k) / K)
+
+                    # a large var will have a large smoothing effect, i.e. it will make all values equal
+                    # a small var will have a small smoothing effect, i.e. it will preserve the original values
                     var_a = dist_aa.max() * var_percentage * ((K - k) / K)
+                    var_b = dist_bb.max() * var_percentage * ((K - k) / K)
+                    assert var_a > 0 and var_b > 0
 
                     perm_matrix = perm_indices_to_perm_matrix(torch.tensor(ci))
-                    dist_bb_perm = dist_bb @ perm_matrix.t()
+                    dist_bb_perm = dist_bb @ perm_matrix.T
 
-                    kernel_B = torch.exp(-(dist_bb_perm).pow(2) / (2 * var_b))
                     kernel_A = torch.exp(-(dist_aa).pow(2) / (2 * var_a))
+                    kernel_B = torch.exp(-(dist_bb_perm).pow(2) / (2 * var_b))
+
                     sim_matrix = kernel_A @ kernel_B.T
 
             else:

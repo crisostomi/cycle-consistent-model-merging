@@ -32,6 +32,10 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
+
+    core_cfg = cfg  # NOQA
+    cfg = cfg.matching
+
     seed_index_everything(cfg)
 
     # [1, 2, 3, ..]
@@ -79,7 +83,7 @@ def run(cfg: DictConfig) -> str:
     sync_permutations = synchronize_permutations(permutations, method=cfg.sync_method, symbols=symbols)
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
-    save_permutations(sync_permutations, cfg.permutations_path / "sync_permutations.json")
+    save_permutations(sync_permutations, cfg.permutations_path / "improved_permutations.json")
 
 
 def synchronize_permutations(permutations: Dict[str, Dict[str, PermutationIndices]], method: str, symbols: Set[str]):
@@ -136,7 +140,7 @@ def synchronize_permutations(permutations: Dict[str, Dict[str, PermutationIndice
     return sync_permutations
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_then_sync_resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

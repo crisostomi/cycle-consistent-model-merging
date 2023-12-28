@@ -58,3 +58,22 @@ model_info_path: ${output_path}/${dataset}/${model_name}
 
 permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset}/match_and_sync/${sync_method}/}
 results_path: ${oc.env:PROJECT_ROOT}/results/${dataset}/match_and_sync/${sync_method}/
+
+
+logging:
+  upload:
+    run_files: true
+    source: true
+
+  logger:
+    _target_: pytorch_lightning.loggers.WandbLogger
+
+    project: ${core.project_name}
+    entity: null
+    log_model: ${..upload.run_files}
+    mode: 'online'
+    tags: ${core.tags}
+
+  wandb_watch:
+    log: 'all'
+    log_freq: 100

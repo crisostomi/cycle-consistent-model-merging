@@ -1,4 +1,4 @@
-seed_index: 0
+seed_index: 1
 
 output_path: ${oc.env:PROJECT_ROOT}/output
 dataset_path: ${oc.env:PROJECT_ROOT}/data
@@ -18,24 +18,24 @@ sync_method: 'stiefel' # 'stiefel', 'spectral', 'nmfSync'
 model_seeds:
   - 1
   - 2
-  # - 3
+  - 3
 
 num_interpolation_steps: 3
 
 datasets:
   train:
     _target_: torchvision.datasets.CIFAR10
-    root: ${dataset_path}
+    root: ${matching.dataset_path}
     train: True
     download: True
-    transform: ${transform}
+    transform: ${matching.transform}
 
   test:
     _target_: torchvision.datasets.CIFAR10
-    root: ${dataset_path}
+    root: ${matching.dataset_path}
     train: False
     download: True
-    transform: ${transform}
+    transform: ${matching.transform}
 
 permutation_spec_builder:
   _target_: ccmm.matching.weight_matching.ResNet20PermutationSpecBuilder
@@ -50,8 +50,10 @@ transform:
 
 batch_size: 5000
 num_workers: 14
-model_identifier: ${model_name}_${depth}_${widen_factor}
-model_info_path: ${output_path}/${dataset}/${model_identifier}
 
-permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset}/match_then_sync/${sync_method}/}
-results_path: ${oc.env:PROJECT_ROOT}/results/${dataset}/match_then_sync/${sync_method}/
+model_identifier: ${matching.model_name}_${matching.depth}_${matching.widen_factor}
+model_info_path: ${matching.output_path}/${matching.dataset}/${matching.model_identifier}
+
+
+permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${matching.dataset}/match_then_sync/${matching.sync_method}/}
+results_path: ${oc.env:PROJECT_ROOT}/results/${matching.dataset}/match_then_sync/${matching.sync_method}/

@@ -12,8 +12,10 @@ from pytorch_lightning import LightningModule
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from nn_core.callbacks import NNTemplateCore
 from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
+from nn_core.model_logging import NNLogger
 
 from ccmm.matching.weight_matching import apply_permutation
 from ccmm.utils.matching_utils import get_all_symbols_combinations, restore_original_weights
@@ -24,13 +26,16 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
+    # [1, 2, 3, ..]
+    core_cfg = cfg
+    cfg = cfg.matching
+
     seed_index_everything(cfg)
 
-    # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
 
-    if not cfg.sync_method:
+    if not cfg.sync_method and not cfg.use_alternate_diffusion:
         pylogger.warning("Only using naive and git re-basin interpolation.")
 
     # {a: 1, b: 2, c: 3, ..}
@@ -45,6 +50,12 @@ def run(cfg: DictConfig) -> str:
     models: Dict[str, LightningModule] = {
         map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in model_seeds
     }
+
+    template_core: NNTemplateCore = NNTemplateCore(
+        restore_cfg=None,
+    )
+
+    logger: NNLogger = NNLogger(logging_cfg=core_cfg.logging, cfg=core_cfg, resume_id=template_core.resume_id)
 
     model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
@@ -84,12 +95,27 @@ def run(cfg: DictConfig) -> str:
     for fixed, permutee in canonical_combinations:
         restore_original_weights(models, model_orig_weights)
         evaluate_pair_of_models(
-            models, fixed, permutee, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg
+            models,
+            fixed,
+            permutee,
+            updated_params,
+            sync_updated_params,
+            train_loader,
+            test_loader,
+            lambdas,
+            cfg,
+            logger,
         )
+
+    if logger is not None:
+        logger.log_configuration(model=list(models.values())[0], cfg=cfg)
+        logger.experiment.finish()
+
+    return logger.run_dir
 
 
 def evaluate_pair_of_models(
-    models, fixed_id, permutee_id, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg
+    models, fixed_id, permutee_id, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg, logger
 ):
     fixed_model = models[fixed_id]
     permutee_model = models[permutee_id]
@@ -113,12 +139,21 @@ def evaluate_pair_of_models(
 
     results_clever = evaluate_interpolated_models(fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg)
 
+    results = {"naive": results_naive, "clever": results_clever, "sync": results_sync}
+
     acc_plot_path = Path(
         f"{cfg.results_path}/{cfg.model_identifier}_acc_{fixed_id}_{permutee_id}_{cfg.sync_method}.png"
     )
     loss_plot_path = Path(
         f"{cfg.results_path}/{cfg.model_identifier}_loss_{fixed_id}_{permutee_id}_{cfg.sync_method}.png"
     )
+
+    metrics = ["acc", "loss"]
+    approaches = ["naive", "clever", "sync"]
+    for step, lambd in enumerate(lambdas):
+        for metric in metrics:
+            for approach in approaches:
+                logger.experiment.log({f"{metric}/{approach}": results[approach][f"test_{metric}"][step]}, step=step)
 
     acc_plot_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,7 +196,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync_resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

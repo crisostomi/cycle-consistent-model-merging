@@ -27,6 +27,10 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
+
+    core_cfg = cfg  # NOQA
+    cfg = cfg.matching
+
     seed_index_everything(cfg)
 
     if not cfg.sync_method:
@@ -67,9 +71,9 @@ def run(cfg: DictConfig) -> str:
     for fixed, permutee in canonical_combinations:
         permutations[fixed][permutee] = weight_matching(
             permutation_spec,
-            fixed=models[fixed].model.state_dict(),
-            to_permute=models[permutee].model.state_dict(),
-            use_alternate_diffusion=False,
+            fixed=model_orig_weights[fixed],
+            to_permute=model_orig_weights[permutee],
+            alternate_diffusion_params=None,
         )
 
         permutations[permutee][fixed] = get_inverse_permutations(permutations[fixed][permutee])
@@ -81,12 +85,16 @@ def run(cfg: DictConfig) -> str:
     symbols_seq = sorted(list(symbols))
 
     if cfg.sync_method is not None:
+        seed_index_everything(cfg)
+
         pylogger.info(f"Using synchronization method {cfg.sync_method}")
         improved_permutations = synchronized_weight_matching(
             models, permutation_spec, method=cfg.sync_method, symbols=symbols_seq, combinations=all_combinations
         )
     elif cfg.use_alternate_diffusion:
-        pylogger.info("Using alternate diffusion")
+        seed_index_everything(cfg)
+
+        pylogger.info("Using alternating diffusion")
         improved_permutations = {
             symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols
         }
@@ -94,9 +102,9 @@ def run(cfg: DictConfig) -> str:
         for fixed, permutee in canonical_combinations:
             improved_permutations[fixed][permutee] = weight_matching(
                 permutation_spec,
-                fixed=models[fixed].model.state_dict(),
-                to_permute=models[permutee].model.state_dict(),
-                use_alternate_diffusion=True,
+                fixed=model_orig_weights[fixed],
+                to_permute=model_orig_weights[permutee],
+                alternate_diffusion_params=cfg.alternate_diffusion_params,
             )
 
             improved_permutations[permutee][fixed] = get_inverse_permutations(improved_permutations[fixed][permutee])
@@ -112,7 +120,7 @@ def run(cfg: DictConfig) -> str:
     save_permutations(improved_permutations, cfg.permutations_path / "improved_permutations.json")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="match_and_sync_resnet")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
