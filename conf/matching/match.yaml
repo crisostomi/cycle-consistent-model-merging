@@ -1,0 +1,29 @@
+defaults:
+  - matcher: alternating_diffusion # dummy, git_rebasin, alternating_diffusion, synchronized
+
+seed_index: 1
+
+output_path: ${oc.env:PROJECT_ROOT}/output
+dataset_path: ${oc.env:PROJECT_ROOT}/data
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: 1
+  precision: 32
+
+model_seeds:
+  - 2
+  - 3
+  # - 3
+  # - 4
+  # - 5
+
+num_interpolation_steps: 3
+
+batch_size: 5000
+num_workers: 14
+
+model_info_path: ${matching.output_path}/${dataset.name}/${model.model_identifier}
+
+permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset.name}/${matching.matcher.name}/}
+results_path: ${path:${oc.env:PROJECT_ROOT}/results/${dataset.name}/${matching.matcher.name}/}

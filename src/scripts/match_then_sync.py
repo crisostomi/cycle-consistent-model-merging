@@ -71,7 +71,7 @@ def run(cfg: DictConfig) -> str:
         permutations[fixed][permutee] = weight_matching(
             permutation_spec,
             fixed=models[fixed].model.state_dict(),
-            to_permute=models[permutee].model.state_dict(),
+            permutee=models[permutee].model.state_dict(),
         )
 
         permutations[permutee][fixed] = get_inverse_permutations(permutations[fixed][permutee])

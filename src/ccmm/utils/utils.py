@@ -6,10 +6,13 @@ from pydoc import locate
 from typing import Any, Dict, List
 
 import hydra
+import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
 from omegaconf import ListConfig
 from pytorch_lightning.callbacks import Callback, ModelCheckpoint
+from scipy.interpolate import interp1d
+from scipy.misc import derivative
 
 from nn_core.serialization import load_model
 
@@ -36,6 +39,82 @@ def map_model_seed_to_symbol(seed):
 
 def flatten_params(model):
     return model.state_dict()
+
+
+def calculate_global_radius(dist_matrix, k=5, target_percentage=0.8):
+    """
+    Calculate a global radius such that a target percentage of neurons have at least K neighbors.
+    """
+    num_neurons = dist_matrix.shape[0]
+    max_radius = torch.max(dist_matrix)
+    step = max_radius / 100  # Increment step for radius
+    radius = 0
+
+    while radius <= max_radius:
+        count = 0
+        for i in range(num_neurons):
+            # Calculate distances
+            neuron_distances = dist_matrix[i]
+
+            # Count how many neurons are within the current radius
+            neighbors_within_radius = torch.sum(neuron_distances <= radius).item() - 1  # Exclude the neuron itself
+
+            # Check if the current neuron has at least K neighbors
+            if neighbors_within_radius >= k:
+                count += 1
+
+        # Check if the current radius satisfies the condition for the target percentage of neurons
+        if (count / num_neurons) >= target_percentage:
+            return radius
+        radius += step
+
+    return radius
+
+
+def plot_cumulative_density(neuron_dists, min_value, num_radii):
+    max_dist = torch.max(neuron_dists)
+    radii = torch.linspace(min_value, max_dist, num_radii)
+
+    cumulative_counts = [torch.sum(neuron_dists <= radius) for radius in radii]
+
+    # Normalize cumulative counts to get the fraction (percentage) of neighbors
+    cumulative_counts_normalized = torch.tensor(cumulative_counts) / len(neuron_dists)
+
+    # Interpolate the cumulative counts to compute derivative
+    interpolated_counts = interp1d(radii, cumulative_counts_normalized, kind="cubic")
+
+    print(interpolated_counts)
+    # Compute the derivative (approximate local density)
+    # Compute the derivative within the bounds of the interpolated function
+    # Using a slightly reduced range to avoid boundary issues
+    radius_min = radii[1] + 1e-1  # start slightly above the minimum to avoid boundary issue
+    radius_max = radii[-2] - 1e-1  # end slightly below the maximum to avoid boundary issue
+    fine_radii = torch.linspace(radius_min, radius_max, num_radii)
+    density = [derivative(interpolated_counts, r, dx=1e-2) for r in fine_radii]
+
+    # Plotting
+    plt.figure(figsize=(12, 6))
+
+    # Plot cumulative counts
+    plt.subplot(1, 2, 1)
+    plt.plot(radii, cumulative_counts_normalized, label="Cumulative Counts")
+    plt.xlabel("Radius")
+    plt.ylabel("Fraction of Neighbors")
+    plt.title("Cumulative Counts vs Radius")
+    plt.grid(True)
+    plt.legend()
+
+    # Plot derivative (density)
+    plt.subplot(1, 2, 2)
+    plt.plot(fine_radii, density, label="Density (Derivative)", color="orange")
+    plt.xlabel("Radius")
+    plt.ylabel("Density")
+    plt.title("Density vs Radius")
+    plt.grid(True)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 
 def linear_interpolation(lam, t1, t2):
@@ -85,12 +164,19 @@ def load_model_from_info(model_info_path, seed):
     return model
 
 
-def save_permutations(permutations, path):
+def save_permutations(permutations: Dict[str, Dict], path: str):
+    """ """
     for source, targets in permutations.items():
+        if targets is None:
+            continue
         for target, source_target_perms in targets.items():
+            if source_target_perms is None:
+                continue
             for perm_name, perm in source_target_perms.items():
-                if perm is not None:
-                    permutations[source][target][perm_name] = perm.tolist()
+                if perm is None:
+                    continue
+                permutations[source][target][perm_name] = perm.tolist()
+
     with open(path, "w+") as f:
         json.dump(permutations, f)
 

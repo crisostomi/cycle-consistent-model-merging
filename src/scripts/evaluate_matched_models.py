@@ -19,7 +19,6 @@ from nn_core.model_logging import NNLogger
 
 from ccmm.matching.weight_matching import apply_permutation
 from ccmm.utils.matching_utils import get_all_symbols_combinations, restore_original_weights
-from ccmm.utils.plot import plot_interpolation_results
 from ccmm.utils.utils import linear_interpolation, load_model_from_info, load_permutations, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
@@ -34,9 +33,6 @@ def run(cfg: DictConfig) -> str:
 
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
-
-    if not cfg.sync_method and not cfg.use_alternate_diffusion:
-        pylogger.warning("Only using naive and git re-basin interpolation.")
 
     # {a: 1, b: 2, c: 3, ..}
     symbols_to_seed = {map_model_seed_to_symbol(seed): seed for seed in model_seeds}
@@ -60,29 +56,23 @@ def run(cfg: DictConfig) -> str:
     model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
     updated_params = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
-    sync_updated_params = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
-    permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
+    permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
     permutations = load_permutations(cfg.permutations_path / "permutations.json")
-    sync_permutations = load_permutations(cfg.permutations_path / "improved_permutations.json")
 
     for fixed, permutee in all_combinations:
-        # sync_perms[a, b] maps b -> a
-        sync_updated_params[fixed][permutee] = apply_permutation(
-            permutation_spec, sync_permutations[fixed][permutee], models[permutee].model.state_dict()
-        )
-        restore_original_weights(models, model_orig_weights)
+        # perms[a, b] maps b -> a
         updated_params[fixed][permutee] = apply_permutation(
             permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )
         restore_original_weights(models, model_orig_weights)
 
-    transform = instantiate(cfg.transform)
+    transform = instantiate(core_cfg.dataset.test.transform)
 
-    train_dataset = instantiate(cfg.datasets.train, transform=transform)
-    test_dataset = instantiate(cfg.datasets.test, transform=transform)
+    train_dataset = instantiate(core_cfg.dataset.train, transform=transform)
+    test_dataset = instantiate(core_cfg.dataset.test, transform=transform)
 
     train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
@@ -99,69 +89,35 @@ def run(cfg: DictConfig) -> str:
             fixed,
             permutee,
             updated_params,
-            sync_updated_params,
             train_loader,
             test_loader,
             lambdas,
-            cfg,
+            core_cfg,
             logger,
         )
 
     if logger is not None:
-        logger.log_configuration(model=list(models.values())[0], cfg=cfg)
+        logger.log_configuration(model=list(models.values())[0], cfg=core_cfg)
         logger.experiment.finish()
 
     return logger.run_dir
 
 
 def evaluate_pair_of_models(
-    models, fixed_id, permutee_id, updated_params, sync_updated_params, train_loader, test_loader, lambdas, cfg, logger
+    models, fixed_id, permutee_id, updated_params, train_loader, test_loader, lambdas, cfg, logger
 ):
     fixed_model = models[fixed_id]
     permutee_model = models[permutee_id]
-
-    # synchronized interpolation
-    permutee_model.model.load_state_dict(sync_updated_params[fixed_id][permutee_id])
-
-    results_sync = evaluate_interpolated_models(fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg)
-
-    # naive interpolation
-    # results_naive = evaluate_interpolated_models(model_a, model_b, train_loader, test_loader, lambdas)
-    results_naive = {
-        "train_acc": [0 for i in lambdas],
-        "train_loss": [0 for i in lambdas],
-        "test_acc": [0 for i in lambdas],
-        "test_loss": [0 for i in lambdas],
-    }
-
-    # clever interpolation
     permutee_model.model.load_state_dict(updated_params[fixed_id][permutee_id])
 
-    results_clever = evaluate_interpolated_models(fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg)
-
-    results = {"naive": results_naive, "clever": results_clever, "sync": results_sync}
-
-    acc_plot_path = Path(
-        f"{cfg.results_path}/{cfg.model_identifier}_acc_{fixed_id}_{permutee_id}_{cfg.sync_method}.png"
-    )
-    loss_plot_path = Path(
-        f"{cfg.results_path}/{cfg.model_identifier}_loss_{fixed_id}_{permutee_id}_{cfg.sync_method}.png"
+    results = evaluate_interpolated_models(
+        fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching
     )
 
     metrics = ["acc", "loss"]
-    approaches = ["naive", "clever", "sync"]
     for step, lambd in enumerate(lambdas):
         for metric in metrics:
-            for approach in approaches:
-                logger.experiment.log({f"{metric}/{approach}": results[approach][f"test_{metric}"][step]}, step=step)
-
-    acc_plot_path.parent.mkdir(parents=True, exist_ok=True)
-
-    fig = plot_interpolation_results(lambdas, results_naive, results_clever, results_sync, metric_to_plot="acc")
-    fig.savefig(acc_plot_path)
-
-    fig = plot_interpolation_results(lambdas, results_naive, results_clever, results_sync, metric_to_plot="loss")
-    fig.savefig(loss_plot_path)
+            logger.experiment.log({f"{metric}": results[f"test_{metric}"][step]}, step=step)
 
 
 def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):

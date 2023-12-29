@@ -1,16 +1,19 @@
+data_path: ${oc.env:PROJECT_ROOT}/data
+name: CIFAR10
+
 train:
   _target_: torchvision.datasets.CIFAR10
-  root: ${nn.data_path}
+  root: ${dataset.data_path}
   train: True
   download: True
-  transform: ${nn.dataset.train_transform}
+  transform: ${dataset.train_transform}
 
 test:
   _target_: torchvision.datasets.CIFAR10
-  root: ${nn.data_path}
+  root: ${dataset.data_path}
   train: False
   download: True
-  transform: ${nn.dataset.test_transform}
+  transform: ${dataset.test_transform}
 
 train_transform:
   _target_: torchvision.transforms.Compose

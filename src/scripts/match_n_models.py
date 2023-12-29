@@ -33,9 +33,6 @@ def run(cfg: DictConfig) -> str:
 
     seed_index_everything(cfg)
 
-    if not cfg.sync_method:
-        pylogger.warning("Only using naive and git re-basin methods.")
-
     # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
@@ -55,7 +52,7 @@ def run(cfg: DictConfig) -> str:
 
     model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
-    permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
+    permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
     # dicts for permutations and permuted params, D[a][b] refers to the permutation/params to map b -> a
@@ -68,11 +65,14 @@ def run(cfg: DictConfig) -> str:
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
     canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
 
+    seed_index_everything(cfg)
+
     for fixed, permutee in canonical_combinations:
+
         permutations[fixed][permutee] = weight_matching(
             permutation_spec,
             fixed=model_orig_weights[fixed],
-            to_permute=model_orig_weights[permutee],
+            permutee=model_orig_weights[permutee],
             alternate_diffusion_params=None,
         )
 
@@ -91,6 +91,7 @@ def run(cfg: DictConfig) -> str:
         improved_permutations = synchronized_weight_matching(
             models, permutation_spec, method=cfg.sync_method, symbols=symbols_seq, combinations=all_combinations
         )
+
     elif cfg.use_alternate_diffusion:
         seed_index_everything(cfg)
 
@@ -103,7 +104,7 @@ def run(cfg: DictConfig) -> str:
             improved_permutations[fixed][permutee] = weight_matching(
                 permutation_spec,
                 fixed=model_orig_weights[fixed],
-                to_permute=model_orig_weights[permutee],
+                permutee=model_orig_weights[permutee],
                 alternate_diffusion_params=cfg.alternate_diffusion_params,
             )
 
@@ -112,6 +113,7 @@ def run(cfg: DictConfig) -> str:
             restore_original_weights(models, model_orig_weights)
 
             check_permutations_are_valid(improved_permutations[fixed][permutee], improved_permutations[permutee][fixed])
+
     else:
         pylogger.info("Not using any improved method")
         improved_permutations = copy.deepcopy(permutations)

@@ -1,0 +1,38 @@
+core:
+  project_name: cycle-consistent-model-merging
+  storage_dir: ${oc.env:PROJECT_ROOT}/storage
+  version: 0.0.1
+  tags:
+    - matching
+
+defaults:
+  - hydra: default
+  - matching: match # match_then_sync
+  - dataset: cifar10
+  - model: resnet20
+  - _self_ # as last argument to allow the override of parameters via this main config
+#    Decomment this parameter to get parallel job running
+#  - hydra/launcher: joblibs
+
+logging:
+  upload:
+    run_files: true
+    source: true
+
+  logger:
+    _target_: pytorch_lightning.loggers.WandbLogger
+
+    project: ${core.project_name}
+    entity: null
+    log_model: ${..upload.run_files}
+    mode: 'online'
+    tags: ${core.tags}
+
+  wandb_watch:
+    log: 'all'
+    log_freq: 100
+
+
+train:
+  trainer:
+    fast_dev_run: False
