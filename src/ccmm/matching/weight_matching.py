@@ -347,7 +347,9 @@ def weight_matching(
 
             if alternate_diffusion_params:
                 perm_matrix = perm_indices_to_perm_matrix(perm_indices)
-                perm_indices = alternating_diffusion(perm_matrix, dist_aa, dist_bb, alternate_diffusion_params)
+                perm_indices = alternating_diffusion(
+                    perm_matrix, dist_aa, dist_bb, alternate_diffusion_params, sim_matrix
+                )
 
             old_similarity = compute_weights_similarity(sim_matrix, all_perm_indices[p])
 
@@ -379,14 +381,39 @@ def compute_weights_similarity(similarity_matrix, perm_indices):
     return similarity
 
 
-def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_params):
+def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_params, precomputed_sim_matrix):
+
     sim_matrix = initial_perm
+    initial_perm_indices = perm_matrix_to_perm_indices(initial_perm)
+
     var_percentage = alternate_diffusion_params.var_percentage
     K = alternate_diffusion_params.num_diffusion_steps
+
+    dist_bb_perm = dist_bb @ initial_perm.T
+
+    var_a = dist_aa.max() * var_percentage
+    var_b = dist_bb.max() * var_percentage
+
+    kernel_A = torch.exp(-(dist_aa).pow(2) / (2 * var_a))
+    kernel_B = torch.exp(-(dist_bb_perm).pow(2) / (2 * var_b))
+
+    sim_matrix = kernel_A @ kernel_B.T
+
+    old_sim_value = compute_weights_similarity(sim_matrix, perm_matrix_to_perm_indices(initial_perm))
+
+    old_perm_indices = initial_perm_indices
+
+    original_kernel_sim_matrix = sim_matrix.clone()
 
     for k in range(K):
 
         perm_indices = solve_linear_assignment_problem(sim_matrix)
+
+        new_sim_value = compute_weights_similarity(original_kernel_sim_matrix, perm_indices)
+
+        if new_sim_value <= old_sim_value:
+            pylogger.info(f"Exiting after {k} steps, difference: {new_sim_value - old_sim_value}")
+            return old_perm_indices
 
         # a large var will have a large smoothing effect, i.e. it will make all values equal
         # a small var will have a small smoothing effect, i.e. it will preserve the original values
@@ -404,6 +431,11 @@ def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_pa
         kernel_B = torch.exp(-(dist_bb_perm).pow(2) / (2 * var_b))
 
         sim_matrix = kernel_A @ kernel_B.T
+
+        old_sim_value = new_sim_value.clone()
+        old_perm_indices = perm_indices.clone()
+
+    pylogger.info(f"Did all {K} iterations.")
 
     return perm_indices
 

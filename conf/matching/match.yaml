@@ -1,7 +1,7 @@
 defaults:
   - matcher: alternating_diffusion # dummy, git_rebasin, alternating_diffusion, synchronized
 
-seed_index: 1
+seed_index: 4
 
 output_path: ${oc.env:PROJECT_ROOT}/output
 dataset_path: ${oc.env:PROJECT_ROOT}/data
@@ -12,8 +12,8 @@ trainer:
   precision: 32
 
 model_seeds:
+  - 1
   - 2
-  - 3
   # - 3
   # - 4
   # - 5

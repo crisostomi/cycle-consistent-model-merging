@@ -124,6 +124,16 @@ def linear_interpolation(lam, t1, t2):
     return t3
 
 
+def l2_norm_models(state_dict1, state_dict2):
+    """Calculate the L2 norm of the difference between two state dictionaries."""
+    diff_squared_sum = sum(torch.sum((state_dict1[key] - state_dict2[key]) ** 2) for key in state_dict1)
+    return torch.sqrt(diff_squared_sum)
+
+
+def average_models(model_params):
+    return {k: torch.mean(torch.stack([p[k] for p in model_params]), dim=0) for k in model_params[0].keys()}
+
+
 def get_checkpoint_callback(callbacks):
     for callback in callbacks:
         if isinstance(callback, ModelCheckpoint):
@@ -153,12 +163,14 @@ def block(i, j, n):
     return slice(i * n, (i + 1) * n), slice(j * n, (j + 1) * n)
 
 
-def load_model_from_info(model_info_path, seed):
-    model_info_path_seed = model_info_path + f"_{seed}.json"
+def load_model_from_info(model_info_path, seed=None, zipped=True):
+    suffix = "" if seed is None else f"_{seed}.json"
+    model_info_path_seed = model_info_path + suffix
     model_info = json.load(open(model_info_path_seed))
     model_class = locate(model_info["class"])
 
-    model = load_model(model_class, checkpoint_path=Path(model_info["path"] + ".zip"))
+    suffix = ".zip" if zipped else ""
+    model = load_model(model_class, checkpoint_path=Path(model_info["path"] + suffix))
     model.eval()
 
     return model

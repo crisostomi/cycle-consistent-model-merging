@@ -25,12 +25,12 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
-    # [1, 2, 3, ..]
     core_cfg = cfg
     cfg = cfg.matching
 
     seed_index_everything(cfg)
 
+    # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
 
