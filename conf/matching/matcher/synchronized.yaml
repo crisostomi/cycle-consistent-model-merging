@@ -1,0 +1,6 @@
+
+_target_: ccmm.matching.matcher.SynchronizedMatcher
+name: 'synchronized_${matching.matcher.sync_method}'
+permutation_spec: ??
+max_iter: 100
+sync_method: 'stiefel' # 'stiefel', 'spectral', 'nmfSync'

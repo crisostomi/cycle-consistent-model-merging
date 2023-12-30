@@ -1,0 +1,4 @@
+
+_target_: ccmm.matching.matcher.DummyMatcher
+name: 'dummy'
+permutation_spec: ??

@@ -1,0 +1,8 @@
+
+_target_: ccmm.matching.matcher.AlternatingDiffusionMatcher
+name: alternating_diffusion
+permutation_spec: ??
+max_iter: 100
+alternate_diffusion_params:
+  num_diffusion_steps: 30
+  var_percentage: 0.1

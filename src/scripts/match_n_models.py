@@ -27,10 +27,11 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
-    seed_index_everything(cfg)
 
-    if not cfg.sync_method:
-        pylogger.warning("Only using naive and git re-basin methods.")
+    core_cfg = cfg  # NOQA
+    cfg = cfg.matching
+
+    seed_index_everything(cfg)
 
     # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
@@ -51,24 +52,28 @@ def run(cfg: DictConfig) -> str:
 
     model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
-    permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
+    permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
     # dicts for permutations and permuted params, D[a][b] refers to the permutation/params to map b -> a
     permutations = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
-    assert set(permutation_spec.axes_to_perm.keys()) == set(models["a"].model.state_dict().keys())
+    # assert set(permutation_spec.axes_to_perm.keys()) == set(models["a"].model.state_dict().keys())
 
     restore_original_weights(models, model_orig_weights)
 
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
     canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
 
+    seed_index_everything(cfg)
+
     for fixed, permutee in canonical_combinations:
+
         permutations[fixed][permutee] = weight_matching(
             permutation_spec,
-            fixed=models[fixed].model.state_dict(),
-            to_permute=models[permutee].model.state_dict(),
+            fixed=model_orig_weights[fixed],
+            permutee=model_orig_weights[permutee],
+            alternate_diffusion_params=None,
         )
 
         permutations[permutee][fixed] = get_inverse_permutations(permutations[fixed][permutee])
@@ -80,17 +85,44 @@ def run(cfg: DictConfig) -> str:
     symbols_seq = sorted(list(symbols))
 
     if cfg.sync_method is not None:
-        sync_permutations = synchronized_weight_matching(
+        seed_index_everything(cfg)
+
+        pylogger.info(f"Using synchronization method {cfg.sync_method}")
+        improved_permutations = synchronized_weight_matching(
             models, permutation_spec, method=cfg.sync_method, symbols=symbols_seq, combinations=all_combinations
         )
+
+    elif cfg.use_alternate_diffusion:
+        seed_index_everything(cfg)
+
+        pylogger.info("Using alternating diffusion")
+        improved_permutations = {
+            symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols
+        }
+
+        for fixed, permutee in canonical_combinations:
+            improved_permutations[fixed][permutee] = weight_matching(
+                permutation_spec,
+                fixed=model_orig_weights[fixed],
+                permutee=model_orig_weights[permutee],
+                alternate_diffusion_params=cfg.alternate_diffusion_params,
+            )
+
+            improved_permutations[permutee][fixed] = get_inverse_permutations(improved_permutations[fixed][permutee])
+
+            restore_original_weights(models, model_orig_weights)
+
+            check_permutations_are_valid(improved_permutations[fixed][permutee], improved_permutations[permutee][fixed])
+
     else:
-        sync_permutations = copy.deepcopy(permutations)
+        pylogger.info("Not using any improved method")
+        improved_permutations = copy.deepcopy(permutations)
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
-    save_permutations(sync_permutations, cfg.permutations_path / "sync_permutations.json")
+    save_permutations(improved_permutations, cfg.permutations_path / "improved_permutations.json")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf/matching"), config_name="git_rebasin")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

@@ -15,6 +15,7 @@ from nn_core.common import PROJECT_ROOT
 from ccmm.utils.matching_utils import (
     PermutationMatrix,
     parse_three_models_sync_matrix,
+    perm_indices_to_perm_matrix,
     perm_matrix_to_perm_indices,
     three_models_uber_matrix,
 )
@@ -39,7 +40,7 @@ def norm_layer_axes(name, p):
 
 
 def dense_layer_axes(name, p_in, p_out, bias=True):
-    # it's (p_in , p_out) in git-rebasin
+    # it's (p_in , p_out) in git-rebasin (due to jax)
     return {f"{name}.weight": (p_out, p_in), f"{name}.bias": (p_out,)}
 
 
@@ -280,7 +281,14 @@ def apply_permutation(ps: PermutationSpec, perm_matrices, all_params):
     return permuted_params
 
 
-def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelParams, max_iter=100, init_perm=None):
+def weight_matching(
+    ps: PermutationSpec,
+    fixed: ModelParams,
+    permutee: ModelParams,
+    max_iter=100,
+    init_perm=None,
+    alternate_diffusion_params=None,
+):
     """
     Find a permutation of params_b to make them match params_a.
 
@@ -288,15 +296,18 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
     :param target: the parameters to match
     :param to_permute: the parameters to permute
     """
-    params_a, params_b = fixed, to_permute
+    params_a, params_b = fixed, permutee
 
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
-    perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
+    perm_sizes = {
+        p: params_a[params_and_axes[0][0]].shape[params_and_axes[0][1]]
+        for p, params_and_axes in ps.perm_to_axes.items()
+    }
 
     # initialize with identity permutation if none given
-    perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
+    all_perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
     # e.g. P0, P1, ..
-    perm_names = list(perm_indices.keys())
+    perm_names = list(all_perm_indices.keys())
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
         progress = False
@@ -304,9 +315,11 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
         # iterate over the permutation matrices in random order
         for p_ix in torch.randperm(len(perm_names)):
             p = perm_names[p_ix]
-            n = perm_sizes[p]
+            num_neurons = perm_sizes[p]
 
-            sim_matrix = torch.zeros((n, n))
+            sim_matrix = torch.zeros((num_neurons, num_neurons))
+            dist_aa = torch.zeros((num_neurons, num_neurons))
+            dist_bb = torch.zeros((num_neurons, num_neurons))
 
             # all the params that are permuted by this permutation matrix, together with the axis on which it acts
             # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
@@ -320,22 +333,27 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
 
                 perms_to_apply = ps.axes_to_perm[params_name]
 
-                w_b = get_permuted_param(w_b, perms_to_apply, perm_indices, except_axis=axis)
+                w_b = get_permuted_param(w_b, perms_to_apply, all_perm_indices, except_axis=axis)
 
-                w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
-                w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
+                w_a = torch.moveaxis(w_a, axis, 0).reshape((num_neurons, -1))
+                w_b = torch.moveaxis(w_b, axis, 0).reshape((num_neurons, -1))
 
                 sim_matrix += w_a @ w_b.T
 
-            ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
+                dist_aa += torch.cdist(w_a, w_a)
+                dist_bb += torch.cdist(w_b, w_b)
 
-            assert (torch.tensor(ri) == torch.arange(len(ri))).all()
+            perm_indices = solve_linear_assignment_problem(sim_matrix)
 
-            old_similarity = compute_weights_similarity(sim_matrix, perm_indices[p])
+            if alternate_diffusion_params:
+                perm_matrix = perm_indices_to_perm_matrix(perm_indices)
+                perm_indices = alternating_diffusion(perm_matrix, dist_aa, dist_bb, alternate_diffusion_params)
 
-            perm_indices[p] = torch.Tensor(ci)
+            old_similarity = compute_weights_similarity(sim_matrix, all_perm_indices[p])
 
-            new_similarity = compute_weights_similarity(sim_matrix, perm_indices[p])
+            all_perm_indices[p] = perm_indices
+
+            new_similarity = compute_weights_similarity(sim_matrix, all_perm_indices[p])
 
             pylogger.info(f"Iteration {iteration}, Permutation {p}: {new_similarity - old_similarity}")
 
@@ -344,7 +362,7 @@ def weight_matching(ps: PermutationSpec, fixed: ModelParams, to_permute: ModelPa
         if not progress:
             break
 
-    return perm_indices
+    return all_perm_indices
 
 
 def compute_weights_similarity(similarity_matrix, perm_indices):
@@ -359,6 +377,43 @@ def compute_weights_similarity(similarity_matrix, perm_indices):
     similarity = torch.sum(similarity_matrix[torch.arange(n), perm_indices.long()])
 
     return similarity
+
+
+def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_params):
+    sim_matrix = initial_perm
+    var_percentage = alternate_diffusion_params.var_percentage
+    K = alternate_diffusion_params.num_diffusion_steps
+
+    for k in range(K):
+
+        perm_indices = solve_linear_assignment_problem(sim_matrix)
+
+        # a large var will have a large smoothing effect, i.e. it will make all values equal
+        # a small var will have a small smoothing effect, i.e. it will preserve the original values
+        # radius_a = calculate_global_radius(dist_aa, target_percentage=0.8)
+        # radius_b = calculate_global_radius(dist_bb, target_percentage=0.8)
+        # var_a = radius_a *  max(torch.log10(dist_aa.mean()), 0.1) * ((K - k) / K) #dist_aa.max() * var_percentage * ((K - k) / K)
+        # var_b = radius_b *  max(torch.log10(dist_bb.mean()), 0.1) * ((K - k) / K) #dist_bb.max() * var_percentage * ((K - k) / K)
+        var_a = dist_aa.max() * var_percentage * ((K - k) / K)
+        var_b = dist_bb.max() * var_percentage * ((K - k) / K)
+
+        perm_matrix = perm_indices_to_perm_matrix(perm_indices)
+        dist_bb_perm = dist_bb @ perm_matrix.T
+
+        kernel_A = torch.exp(-(dist_aa).pow(2) / (2 * var_a))
+        kernel_B = torch.exp(-(dist_bb_perm).pow(2) / (2 * var_b))
+
+        sim_matrix = kernel_A @ kernel_B.T
+
+    return perm_indices
+
+
+def solve_linear_assignment_problem(sim_matrix: torch.Tensor):
+    ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
+
+    assert (torch.tensor(ri) == torch.arange(len(ri))).all()
+
+    return torch.tensor(ci)
 
 
 def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, combinations, max_iter=100):
@@ -483,27 +538,6 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
             break
 
     return perm_indices
-
-
-def test_weight_matching():
-    """If we just have a single hidden layer then it should converge after just one step."""
-    mlp_perm_spec_builder = MLPPermutationSpecBuilder(num_hidden_layers=3)
-    ps = mlp_perm_spec_builder.create_permutation()
-    print(ps.axes_to_perm)
-    rng = torch.Generator()
-    rng.manual_seed(13)
-    num_hidden = 10
-    shapes = {
-        "layer0.weight": (2, num_hidden),
-        "layer0.bias": (num_hidden,),
-        "layer1.weight": (num_hidden, 3),
-        "layer1.bias": (3,),
-    }
-
-    params_a = {k: torch.randn(shape, generator=rng) for k, shape in shapes.items()}
-    params_b = {k: torch.randn(shape, generator=rng) for k, shape in shapes.items()}
-    perm = weight_matching(rng, ps, params_a, params_b)
-    print(perm)
 
 
 def optimize_synchronization(uber_matrix, n, method="stiefel"):
