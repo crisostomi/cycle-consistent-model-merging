@@ -1,14 +1,11 @@
-defaults:
-  - dataset: mnist
 
 data_path: ${oc.env:PROJECT_ROOT}/data
 output_path: ${oc.env:PROJECT_ROOT}/output
-dataset_name: MNIST
 
 data:
   _target_: ccmm.data.datamodule.MyDataModule
 
-  dataset: ${nn.dataset}
+  dataset: ${dataset}
 
   gpus: ${train.trainer.gpus}
 

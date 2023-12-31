@@ -74,7 +74,7 @@ def run(cfg: DictConfig) -> str:
     }
 
     model_identifier = f"{cfg.nn.module.model_name}_{cfg.train.seed_index}"
-    model_info_path = Path(cfg.nn.output_path) / cfg.nn.dataset_name / f"{model_identifier}.json"
+    model_info_path = Path(cfg.nn.output_path) / cfg.dataset.name / f"{model_identifier}.json"
     model_info_path.parent.mkdir(parents=True, exist_ok=True)
 
     json.dump(best_model_info, open(model_info_path, "w+"))
@@ -89,7 +89,7 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
