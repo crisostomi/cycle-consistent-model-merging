@@ -53,5 +53,3 @@ module:
     warmup_start_lr: 1e-6
     eta_min: 0.0
     last_epoch: -1
-
-  # optim.lr_scheduler.CosineAnnealingLR

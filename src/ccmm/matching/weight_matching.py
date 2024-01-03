@@ -8,11 +8,13 @@ import scipy
 import torch
 from pytorch_lightning import LightningModule
 from scipy.optimize import linear_sum_assignment
+from torch import Tensor
 from tqdm import tqdm
 
 from nn_core.common import PROJECT_ROOT
 
 from ccmm.utils.matching_utils import (
+    PermutationIndices,
     PermutationMatrix,
     parse_three_models_sync_matrix,
     perm_indices_to_perm_matrix,
@@ -22,6 +24,22 @@ from ccmm.utils.matching_utils import (
 from ccmm.utils.utils import ModelParams, block
 
 pylogger = logging.getLogger(__name__)
+
+LAYER_TO_VAR = {
+    "P_bg0": 1.5,
+    "P_bg1": 7.5,
+    "P_bg2": 4.0,
+    "P_bg3": 4.0,
+    "P_layer1.0_inner": 0.3,
+    "P_layer1.1_inner": 0.3,
+    "P_layer1.2_inner": 0.25,
+    "P_layer2.0_inner": 0.1,
+    "P_layer2.1_inner": 0.3,
+    "P_layer2.2_inner": 0.4,
+    "P_layer3.0_inner": 0.4,
+    "P_layer3.1_inner": 0.4,
+    "P_layer3.2_inner": 0.05,
+}
 
 
 def conv_axes(name, p_in, p_out):
@@ -347,9 +365,7 @@ def weight_matching(
 
             if alternate_diffusion_params:
                 perm_matrix = perm_indices_to_perm_matrix(perm_indices)
-                perm_indices = alternating_diffusion(
-                    perm_matrix, dist_aa, dist_bb, alternate_diffusion_params, sim_matrix
-                )
+                perm_indices = alternating_diffusion(perm_matrix, dist_aa, dist_bb, alternate_diffusion_params, p)
 
             old_similarity = compute_weights_similarity(sim_matrix, all_perm_indices[p])
 
@@ -381,8 +397,13 @@ def compute_weights_similarity(similarity_matrix, perm_indices):
     return similarity
 
 
-def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_params, precomputed_sim_matrix):
+def alternating_diffusion(
+    initial_perm: PermutationMatrix, dist_aa: Tensor, dist_bb: Tensor, alternate_diffusion_params, param_name
+) -> PermutationIndices:
+    """
 
+    :param initial_perm: initial permutation matrix obtained from LAP
+    """
     sim_matrix = initial_perm
     initial_perm_indices = perm_matrix_to_perm_indices(initial_perm)
 
@@ -393,6 +414,7 @@ def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_pa
 
     var_a = dist_aa.max() * var_percentage
     var_b = dist_bb.max() * var_percentage
+    # var_a = var_b = LAYER_TO_VAR[param_name]
 
     kernel_A = torch.exp(-(dist_aa).pow(2) / (2 * var_a))
     kernel_B = torch.exp(-(dist_bb_perm).pow(2) / (2 * var_b))
@@ -419,8 +441,8 @@ def alternating_diffusion(initial_perm, dist_aa, dist_bb, alternate_diffusion_pa
         # a small var will have a small smoothing effect, i.e. it will preserve the original values
         # radius_a = calculate_global_radius(dist_aa, target_percentage=0.8)
         # radius_b = calculate_global_radius(dist_bb, target_percentage=0.8)
-        # var_a = radius_a *  max(torch.log10(dist_aa.mean()), 0.1) * ((K - k) / K) #dist_aa.max() * var_percentage * ((K - k) / K)
-        # var_b = radius_b *  max(torch.log10(dist_bb.mean()), 0.1) * ((K - k) / K) #dist_bb.max() * var_percentage * ((K - k) / K)
+        # var_a = radius_a *  max(torch.log10(dist_aa.mean()), 0.1) * ((K - k) / K)
+        # var_b = radius_b *  max(torch.log10(dist_bb.mean()), 0.1) * ((K - k) / K)
         var_a = dist_aa.max() * var_percentage * ((K - k) / K)
         var_b = dist_bb.max() * var_percentage * ((K - k) / K)
 

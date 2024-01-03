@@ -12,7 +12,7 @@ do
         python src/scripts/match_two_models.py "matching/matcher=$approach" "matching.seed_index=$seed"
         python src/scripts/evaluate_matched_models.py "matching/matcher=$approach" "matching.seed_index=$seed"
 
-        echo -e "${RED}Completed experiments for seed $seed${NC}"
+        echo -e "${RED}Completed experiments for model pair $pair with seed $seed${NC}"
     done
 done
 
