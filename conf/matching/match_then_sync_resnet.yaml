@@ -38,7 +38,7 @@ datasets:
     transform: ${matching.transform}
 
 permutation_spec_builder:
-  _target_: ccmm.matching.weight_matching.ResNet20PermutationSpecBuilder
+  _target_: ccmm.matching.permutation_spec.ResNet20PermutationSpecBuilder
 
 transform:
   _target_: torchvision.transforms.Compose

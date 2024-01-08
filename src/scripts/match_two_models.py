@@ -12,14 +12,13 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 
 import ccmm  # noqa
-from ccmm.utils.matching_utils import get_inverse_permutations
+from ccmm.matching.utils import get_inverse_permutations
 from ccmm.utils.utils import flatten_params, load_model_from_info, map_model_seed_to_symbol, save_permutations
 
 pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
-
     core_cfg = cfg  # NOQA
     cfg = cfg.matching
 

@@ -32,7 +32,6 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
-
     core_cfg = cfg  # NOQA
     cfg = cfg.matching
 
@@ -130,7 +129,6 @@ def synchronize_permutations(permutations: Dict[str, Dict[str, PermutationIndice
         sync_perm_matrices = parse_three_models_sync_matrix(sync_matrix, perm_dim, sorted_symbols, combinations)
 
         for fixed, permutee in combinations:
-
             sync_perm_matrix_comb = sync_perm_matrices[(fixed, permutee)]
             sync_permutations[fixed][permutee][layer_perm_name] = perm_matrix_to_perm_indices(sync_perm_matrix_comb)
 

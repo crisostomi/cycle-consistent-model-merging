@@ -4,4 +4,4 @@ depth: 22
 model_identifier: ${model.name}_${model.depth}_${model.widen_factor}
 
 permutation_spec_builder:
-  _target_: ccmm.matching.weight_matching.ResNet20PermutationSpecBuilder
+  _target_: ccmm.matching.permutation_spec.ResNet20PermutationSpecBuilder

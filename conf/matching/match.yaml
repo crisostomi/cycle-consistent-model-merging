@@ -1,5 +1,5 @@
 defaults:
-  - matcher: alternating_diffusion # dummy, git_rebasin, alternating_diffusion, synchronized
+  - matcher: quadratic # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic
 
 seed_index: 4
 

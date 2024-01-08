@@ -1,6 +1,9 @@
 import torch
 
-from ccmm.matching.weight_matching import PermutationSpec, synchronized_weight_matching, weight_matching
+from ccmm.matching.permutation_spec import PermutationSpec
+from ccmm.matching.quadratic_matching import quadratic_weight_matching
+from ccmm.matching.synchronized_matching import synchronized_weight_matching
+from ccmm.matching.weight_matching import weight_matching
 
 
 class Matcher:
@@ -17,7 +20,6 @@ class DummyMatcher(Matcher):
         super().__init__(name, permutation_spec)
 
     def __call__(self, fixed, permutee):
-
         perm_sizes = {
             p: fixed[params_and_axes[0][0]].shape[params_and_axes[0][1]]
             for p, params_and_axes in self.permutation_spec.perm_to_axes.items()
@@ -34,9 +36,26 @@ class GitRebasinMatcher(Matcher):
         self.max_iter = max_iter
 
     def __call__(self, fixed, permutee):
-
         permutation_indices = weight_matching(
             ps=self.permutation_spec, fixed=fixed, permutee=permutee, max_iter=self.max_iter
+        )
+
+        return permutation_indices
+
+
+class QuadraticMatcher(Matcher):
+    def __init__(self, name, permutation_spec: PermutationSpec, max_iter=100, alternate_diffusion_params=None):
+        super().__init__(name, permutation_spec)
+        self.max_iter = max_iter
+        self.alternate_diffusion_params = alternate_diffusion_params
+
+    def __call__(self, fixed, permutee):
+        permutation_indices = quadratic_weight_matching(
+            ps=self.permutation_spec,
+            fixed=fixed,
+            permutee=permutee,
+            max_iter=self.max_iter,
+            alternate_diffusion_params=self.alternate_diffusion_params,
         )
 
         return permutation_indices
@@ -49,7 +68,6 @@ class AlternatingDiffusionMatcher(Matcher):
         self.alternate_diffusion_params = alternate_diffusion_params
 
     def __call__(self, fixed, permutee):
-
         permutation_indices = weight_matching(
             ps=self.permutation_spec,
             fixed=fixed,
@@ -68,7 +86,6 @@ class SynchronizedMatcher(Matcher):
         self.sync_method = sync_method
 
     def __call__(self, models, symbols, combinations):
-
         permutation_indices = synchronized_weight_matching(
             models=models,
             ps=self.permutation_spec,
