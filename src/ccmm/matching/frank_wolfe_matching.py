@@ -32,10 +32,10 @@ def frank_wolfe_weight_matching(
     perm_sizes = {}
 
     # FOR MLP
-    ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
+    # ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    # ps.perm_to_axes['P_final'] = [('linear.weight', 0)]
+    ps.perm_to_axes["P_final"] = [("linear.weight", 0)]
 
     for perm_name, params_and_axes in ps.perm_to_axes.items():
         # params_and_axes is a list of tuples, e.g. [('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..]
@@ -47,14 +47,14 @@ def frank_wolfe_weight_matching(
     all_perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()}
     # e.g. P0, P1, ..
     perm_names = list(all_perm_indices.keys())
-    num_layers = len(perm_names)
+    num_perms = len(perm_names)
 
     old_obj = 0.0
     patience_steps = 0
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
 
-        perm_order = torch.arange(num_layers)
+        perm_order = torch.arange(num_perms)
         gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p])) for p in perm_names}
 
         for p_ix in perm_order:
@@ -70,7 +70,7 @@ def frank_wolfe_weight_matching(
                 params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes
             )
 
-            if p_ix < num_layers:
+            if p_ix < num_perms:
                 gradients[P_curr_name] += grad_P_curr
             if p_ix > 0:
                 gradients[P_prev_name] += grad_P_prev
@@ -90,6 +90,7 @@ def frank_wolfe_weight_matching(
             perm_to_axes = ps.perm_to_axes
 
             # (num_neurons, num_neurons)
+            # TODO: check wtf is going on, using the gradient or its transpose doesn't make any difference
             grad = gradients[P_curr_name]
 
             projected_grad_indices = solve_linear_assignment_problem(grad)
@@ -98,21 +99,32 @@ def frank_wolfe_weight_matching(
 
             def fun(t):
                 p_curr_opt = (1 - t) * P_curr + t * proj_grad
+                # TODO: understand if the projection is necessary
+                p_curr_opt = perm_indices_to_perm_matrix(solve_linear_assignment_problem(p_curr_opt))
                 return -compute_obj_function(
                     params_a, params_b, p_curr_opt, P_prev, P_curr_name, P_prev_name, perm_to_axes
                 )
 
             step_size = fminbound(fun, 0, 1)
 
-            obj = compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes)
+            new_P_curr_interp = (1 - step_size) * P_curr + step_size * (proj_grad)
+            new_P_curr = solve_linear_assignment_problem(new_P_curr_interp)
+
+            obj = compute_obj_function(
+                params_a,
+                params_b,
+                perm_indices_to_perm_matrix(new_P_curr),
+                P_prev,
+                P_curr_name,
+                P_prev_name,
+                perm_to_axes,
+            )
 
             new_obj += obj
 
             pylogger.info(f"{P_curr_name} step_size: {np.round(step_size, 4)}, obj {np.round(obj, 4)}")
 
-            new_P_curr_interp = (1 - step_size) * P_curr + step_size * (proj_grad)
-            new_P_curr = solve_linear_assignment_problem(new_P_curr_interp)
-
+            # TODO: check that it is correct to use the just computed perm or if we should assign a new all_perm_indices
             all_perm_indices[P_curr_name] = new_P_curr
 
         pylogger.info(f"Objective: {np.round(new_obj)}")

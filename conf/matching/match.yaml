@@ -18,7 +18,7 @@ model_seeds:
   # - 4
   # - 5
 
-num_interpolation_steps: 25
+num_interpolation_steps: 3
 
 batch_size: 5000
 num_workers: 14

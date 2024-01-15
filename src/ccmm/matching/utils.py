@@ -66,7 +66,7 @@ def perm_indices_to_perm_matrix(perm_indices: PermutationIndices):
 
 
 def perm_matrix_to_perm_indices(perm_matrix: PermutationMatrix):
-    return perm_matrix.nonzero()[:, 1]
+    return perm_matrix.nonzero()[:, 1].long()
 
 
 def check_permutations_are_valid(permutation, inv_permutation):
@@ -175,11 +175,13 @@ def weight_matching_gradient_fn(params_a, params_b, P_curr, P_prev, P_curr_name,
     # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
     params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
 
-    grad_P_curr = torch.zeros_like(P_curr)
-    grad_P_prev = torch.zeros_like(P_prev) if P_prev is not None else None
+    tot_grad_P_curr = torch.zeros_like(P_curr)
+    tot_grad_P_prev = torch.zeros_like(P_prev) if P_prev is not None else None
 
     for params_name, axis in params_and_axes:
 
+        if P_curr_name == "P_final":
+            print("wtf")
         # axis != 0 will be considered when P_curr will be P_prev for some next layer
         if axis == 0:
 
@@ -190,37 +192,50 @@ def weight_matching_gradient_fn(params_a, params_b, P_curr, P_prev, P_curr_name,
 
             params_perm_by_P_prev = [tup[0] for tup in perm_to_axes[P_prev_name]] if P_prev_name is not None else []
 
+            # TODO: fix P_final, we never get the gradient for 'layer3.2.conv2.weight'
             if P_prev is not None and params_name in params_perm_by_P_prev:
                 # (A P_{l-1} B^T)
                 # P_{l-1} B^T
-                B_perm = P_prev @ Wb.T  # apply_perm(P_prev, Wb.transpose(0, 1), axis=0)
-                # if len(Wb.shape) == 2:
-                # assert torch.all(B_perm == P_prev @ Wb.T)
+                B_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev), x=Wb.transpose(0, 1), axis=0)
+                if len(Wb.shape) == 2:
+                    assert torch.all(B_perm == P_prev @ Wb.T)
 
                 # grad_P_curr += Wa.reshape((num_neurons, -1)) @ B_perm.reshape((num_neurons, -1))
-                grad_P_curr += Wa @ B_perm
+                # grad_P_curr += Wa @ B_perm
+
+                # Using einsum to compute A * B^T
+                # The einsum string 'ijkl,jmkl->im' indicates the following operation:
+                # - 'ijkl' and 'jmkl' are the dimensions of A and B respectively.
+                # - The shared dimension 'j' indicates where the summation will occur (like in matrix multiplication).
+                # - 'im' in the output string denotes the resulting dimensions after the operation.
+                if len(Wa.shape) == 2:
+                    grad_P_curr = Wa @ B_perm
+                elif len(Wa.shape) == 3:
+                    grad_P_curr = torch.einsum("ijk,jmk->im", Wa, B_perm)
+                else:
+                    grad_P_curr = torch.einsum("ijkl,jmkl->im", Wa, B_perm)
+
+                tot_grad_P_curr += grad_P_curr
 
                 # (A^T P_l B)
                 # (P_l B)
-                Wb = P_curr @ Wb
+                Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
+                if len(Wb.shape) == 2:
+                    assert torch.all(Wb_perm == P_curr @ Wb)
 
-                if len(Wa.shape) > 2:
-                    pylogger.info("Beware: tensors with more than 2 dims being operated")
-                    dims_to_sum = list(range(2, len(Wa.shape)))
+                if len(Wa.shape) == 2:
+                    grad_P_prev = Wa.T @ Wb_perm
+                elif len(Wa.shape) == 3:
+                    grad_P_prev = torch.einsum("ijk, jmk -> im", Wa.transpose(1, 0), Wb_perm)
+                else:
+                    grad_P_prev = torch.einsum("ijkl, jmkl -> im", Wa.transpose(1, 0), Wb_perm)
 
-                    # TODO: do it with einsum instead
-                    Wa = Wa.sum(dim=dims_to_sum)
-                    Wb = Wb.sum(dim=dims_to_sum)
-
-                # at this point, Wa and Wb should be matrices or vectors
-                assert len(Wa.shape) in {1, 2} and len(Wb.shape) in {1, 2}
-
-                grad_P_prev += Wa.reshape((num_neurons, -1)).T @ Wb.reshape((num_neurons, -1))
+                grad_P_prev += grad_P_prev
 
             else:
-                grad_P_curr += Wa.reshape((num_neurons, -1)) @ Wb.reshape((num_neurons, -1)).T
+                tot_grad_P_curr += Wa.reshape((num_neurons, -1)) @ Wb.reshape((num_neurons, -1)).T
 
-    return grad_P_curr, grad_P_prev
+    return tot_grad_P_curr, tot_grad_P_prev
 
 
 def compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes):
@@ -251,55 +266,83 @@ def compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev
             params_perm_by_P_prev = [tup[0] for tup in perm_to_axes[P_prev_name]] if P_prev_name is not None else []
 
             # permute B according to P_i
-            Wb_perm = P_curr @ Wb
+            Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
+            if len(Wb.shape) == 2:
+                assert torch.all(Wb_perm == P_curr @ Wb)
 
             if P_prev is not None and params_name in params_perm_by_P_prev:
                 # also permute B according to P_{i-1}^Ts
-                # TODO: understand why P_prev transposed doesn't work
-                Wb_perm = Wb_perm @ P_prev.T  # apply_perm(P_prev, Wb_perm, axis=1)
+                # Wb_perm = Wb_perm @ P_prev.T
+                Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev).T, x=Wb_perm, axis=1)
                 if len(Wb.shape) == 2:
                     assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
 
-            if len(Wa.shape) > 2:
-                pylogger.info("Beware: tensors with more than 2 dims being operated")
-
-                # TODO: do it with einsum instead
-                dims_to_sum = list(range(2, len(Wa.shape)))
-                Wa = Wa.sum(dim=dims_to_sum)
-                Wb_perm = Wb_perm.sum(dim=dims_to_sum)
-
-            # at this point, Wa and Wb should be matrices or vectors
-            assert len(Wa.shape) in {1, 2} and len(Wb_perm.shape) in {1, 2}
-
-            if len(Wa.shape) == 2:
-                obj += torch.trace(Wa.T @ Wb_perm).numpy()
-            else:
+            if len(Wa.shape) == 1:
                 obj += Wa.T @ Wb_perm
+            elif len(Wa.shape) == 2:
+                obj += torch.trace(Wa.T @ Wb_perm).numpy()
+            elif len(Wa.shape) == 3:
+                # The einsum string 'ijk,ilk->ij' indicates the following operation:
+                # - 'ijk' and 'ilk' are the dimensions of Wa and Wb respectively.
+                # - The shared dimensions 'j' and 'k' indicate where the element-wise multiplication and summation will occur.
+                # - 'ij' in the output string denotes the resulting dimensions after the operation.
+                obj += torch.trace(torch.einsum("ijk,jlk->il", Wa.transpose(1, 0), Wb)).numpy()
+            else:
+                obj += torch.trace(torch.einsum("ijkm,jlkm->il", Wa.transpose(1, 0), Wb)).numpy()
 
     return obj
 
 
-def apply_perm(perm, x, axis):
-    assert perm.shape[0] == perm.shape[1]
-    assert x.shape[axis] == perm.shape[0]
+# def apply_perm(perm, x, axis):
+#     assert perm.shape[0] == perm.shape[1]
+#     assert x.shape[axis] == perm.shape[0]
 
-    # Bring the specified axis to the front
-    x = x.moveaxis(axis, 0)
+#     # Bring the specified axis to the front
+#     x = x.moveaxis(axis, 0)
 
-    # Store the original shape and reshape for matrix multiplication
-    original_shape = x.shape
-    x = x.reshape(x.shape[0], -1)
+#     # Store the original shape and reshape for matrix multiplication
+#     original_shape = x.shape
+#     x = x.reshape(x.shape[0], -1)
 
-    # Apply the permutation
-    x_permuted = perm @ x
+#     # Apply the permutation
+#     x_permuted = perm @ x
 
-    # Reshape back to the expanded original shape
-    x_permuted = x_permuted.reshape(original_shape)
+#     # Reshape back to the expanded original shape
+#     x_permuted = x_permuted.reshape(original_shape)
 
-    # Move the axis back to its original position
-    x_permuted = x_permuted.moveaxis(0, axis)
+#     # Move the axis back to its original position
+#     x_permuted = x_permuted.moveaxis(0, axis)
 
-    return x_permuted
+#     return x_permuted
+
+
+def apply_perm(x, perm, axis):
+    """
+    Permute a tensor along a specified axis.
+
+    Parameters:
+    X (torch.Tensor): The input tensor, can be 1D, 2D, 3D, or 4D.
+    P (list or torch.Tensor): The permutation to be applied.
+    axis (int): The axis along which to permute.
+
+    Returns:
+    torch.Tensor: The permuted tensor.
+    """
+    # Ensure P is a torch.Tensor
+    if not isinstance(perm, torch.Tensor):
+        perm = torch.tensor(perm)
+
+    # Check if the axis is valid for the tensor dimensions
+    if axis < 0 or axis >= x.dim():
+        raise ValueError("Axis is out of bounds for the tensor dimensions")
+
+    # Permute the tensor
+    # Generate indices for all dimensions
+    idx = [slice(None)] * x.dim()
+    # Set the indices for the specified axis to the permutation
+    idx[axis] = perm
+
+    return x[idx]
 
 
 def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):
