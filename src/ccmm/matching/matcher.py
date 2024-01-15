@@ -1,9 +1,10 @@
 import torch
 
+from ccmm.matching.frank_wolfe_matching import frank_wolfe_weight_matching
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.quadratic_matching import quadratic_weight_matching
 from ccmm.matching.synchronized_matching import synchronized_weight_matching
-from ccmm.matching.weight_matching import weight_matching
+from ccmm.matching.weight_matching import LayerIterationOrder, weight_matching
 
 
 class Matcher:
@@ -31,13 +32,24 @@ class DummyMatcher(Matcher):
 
 
 class GitRebasinMatcher(Matcher):
-    def __init__(self, name, permutation_spec: PermutationSpec, max_iter=100):
+    def __init__(
+        self,
+        name,
+        permutation_spec: PermutationSpec,
+        max_iter=100,
+        layer_iteration_order: LayerIterationOrder = LayerIterationOrder.RANDOM,
+    ):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
+        self.layer_iteration_order = layer_iteration_order
 
     def __call__(self, fixed, permutee):
         permutation_indices = weight_matching(
-            ps=self.permutation_spec, fixed=fixed, permutee=permutee, max_iter=self.max_iter
+            ps=self.permutation_spec,
+            fixed=fixed,
+            permutee=permutee,
+            max_iter=self.max_iter,
+            layer_iteration_order=self.layer_iteration_order,
         )
 
         return permutation_indices
@@ -93,6 +105,19 @@ class SynchronizedMatcher(Matcher):
             symbols=symbols,
             combinations=combinations,
             max_iter=self.max_iter,
+        )
+
+        return permutation_indices
+
+
+class FrankWolfeMatcher(Matcher):
+    def __init__(self, name, permutation_spec: PermutationSpec, max_iter=100):
+        super().__init__(name, permutation_spec)
+        self.max_iter = max_iter
+
+    def __call__(self, fixed, permutee):
+        permutation_indices = frank_wolfe_weight_matching(
+            ps=self.permutation_spec, fixed=fixed, permutee=permutee, max_iter=self.max_iter
         )
 
         return permutation_indices

@@ -3,3 +3,4 @@ _target_: ccmm.matching.matcher.GitRebasinMatcher
 name: 'git_rebasin'
 permutation_spec: ??
 max_iter: 100
+layer_iteration_order: "${enum: 'ccmm.matching.weight_matching.LayerIterationOrder', RANDOM}"

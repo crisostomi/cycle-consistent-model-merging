@@ -1,8 +1,9 @@
-import copy
 import logging
+from enum import auto
 from typing import List, Tuple
 
 import torch
+from backports.strenum import StrEnum
 from scipy.optimize import linear_sum_assignment
 from torch import Tensor
 from tqdm import tqdm
@@ -11,10 +12,19 @@ from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.utils import (
     PermutationIndices,
     PermutationMatrix,
+    get_permuted_param,
     perm_indices_to_perm_matrix,
     perm_matrix_to_perm_indices,
 )
 from ccmm.utils.utils import ModelParams
+
+
+class LayerIterationOrder(StrEnum):
+    RANDOM = auto()
+    FORWARD = auto()
+    BACKWARD = auto()
+    ALTERNATE = auto()
+
 
 pylogger = logging.getLogger(__name__)
 
@@ -35,40 +45,30 @@ LAYER_TO_VAR = {
 }
 
 
-def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
-    """
-    Apply to the parameter `param` all the permutations computed until the current step.
-
-    :param param: the parameter to permute
-    :param perms_to_apply: the list of permutations to apply to the parameter
-    :param perm_matrices: the list of permutation matrices
-    :param except_axis: axis to skip
-    """
-    for axis, perm_id in enumerate(perms_to_apply):
-        # skip the axis we're trying to permute
-        if axis == except_axis:
-            continue
-
-        # None indicates that there is no permutation relevant to that axis
-        if perm_id is not None:
-            param = torch.index_select(param, axis, perm_matrices[perm_id].int())
-
-    return param
+def get_layer_iteration_order(layer_iteration_order: LayerIterationOrder, num_layers: int):
+    if layer_iteration_order == LayerIterationOrder.RANDOM:
+        return torch.randperm(num_layers)
+    elif layer_iteration_order == LayerIterationOrder.FORWARD:
+        return torch.arange(num_layers)
+    elif layer_iteration_order == LayerIterationOrder.BACKWARD:
+        return range(num_layers)[num_layers:0:-1]
+    elif layer_iteration_order == LayerIterationOrder.ALTERNATE:
+        return alternate_layers(num_layers)
+    else:
+        raise NotImplementedError(f"Unknown layer iteration order {layer_iteration_order}")
 
 
-def apply_permutation(ps: PermutationSpec, perm_matrices, all_params):
-    """Apply a `perm` to `params`."""
+def alternate_layers(num_layers):
+    all_layers = list(range(num_layers))
+    result = []
 
-    permuted_params = {}
+    # Iterate over the list and add elements alternatively from the start and the end
+    for i in range((num_layers + 1) // 2):
+        result.append(all_layers[i])  # Add from the start
+        if i != num_layers - i - 1:  # Check to avoid duplication in case of odd number of layers
+            result.append(all_layers[-i - 1])  # Add from the end
 
-    for param_name, param in all_params.items():
-        param = copy.deepcopy(param)
-        perms_to_apply = ps.axes_to_perm[param_name]
-
-        param = get_permuted_param(param, perms_to_apply, perm_matrices)
-        permuted_params[param_name] = param
-
-    return permuted_params
+    return result
 
 
 def weight_matching(
@@ -78,6 +78,7 @@ def weight_matching(
     max_iter=100,
     init_perm=None,
     alternate_diffusion_params=None,
+    layer_iteration_order: LayerIterationOrder = LayerIterationOrder.RANDOM,
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -98,12 +99,14 @@ def weight_matching(
     all_perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
     # e.g. P0, P1, ..
     perm_names = list(all_perm_indices.keys())
+    num_layers = len(perm_names)
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
         progress = False
 
-        # iterate over the permutation matrices in random order
-        for p_ix in torch.randperm(len(perm_names)):
+        perm_order = get_layer_iteration_order(layer_iteration_order, num_layers)
+
+        for p_ix in perm_order:
             p = perm_names[p_ix]
             num_neurons = perm_sizes[p]
 

@@ -17,8 +17,7 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 from nn_core.model_logging import NNLogger
 
-from ccmm.matching.weight_matching import apply_permutation
-from ccmm.utils.matching_utils import get_all_symbols_combinations, restore_original_weights
+from ccmm.matching.utils import apply_permutation, get_all_symbols_combinations, restore_original_weights
 from ccmm.utils.utils import linear_interpolation, load_model_from_info, load_permutations, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)

@@ -53,6 +53,10 @@ def run(cfg: DictConfig) -> str:
 
     permutations[permutee_symbol][fixed_symbol] = get_inverse_permutations(permutations[fixed_symbol][permutee_symbol])
 
+    # save models as well
+    for symbol, model in models.items():
+        torch.save(model.model.state_dict(), cfg.permutations_path / f"model_{symbol}.pt")
+
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
 
 
