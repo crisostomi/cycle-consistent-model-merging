@@ -17,7 +17,7 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 from nn_core.model_logging import NNLogger
 
-from ccmm.matching.utils import apply_permutation, get_all_symbols_combinations, restore_original_weights
+from ccmm.matching.utils import apply_permutation_to_statedict, get_all_symbols_combinations, restore_original_weights
 from ccmm.utils.utils import linear_interpolation, load_model_from_info, load_permutations, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def run(cfg: DictConfig) -> str:
 
     for fixed, permutee in all_combinations:
         # perms[a, b] maps b -> a
-        updated_params[fixed][permutee] = apply_permutation(
+        updated_params[fixed][permutee] = apply_permutation_to_statedict(
             permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )
         restore_original_weights(models, model_orig_weights)
