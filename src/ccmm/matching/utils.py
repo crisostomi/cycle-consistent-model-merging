@@ -256,7 +256,7 @@ def compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev
             if P_prev is not None and params_name in params_perm_by_P_prev:
                 # also permute B according to P_{i-1}^Ts
                 # TODO: understand why P_prev transposed doesn't work
-                Wb_perm = apply_perm(P_prev, Wb_perm, axis=1)
+                Wb_perm = Wb_perm @ P_prev.T  # apply_perm(P_prev, Wb_perm, axis=1)
                 if len(Wb.shape) == 2:
                     assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
 
