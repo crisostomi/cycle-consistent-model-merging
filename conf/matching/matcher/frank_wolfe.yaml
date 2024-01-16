@@ -1,0 +1,5 @@
+
+_target_: ccmm.matching.matcher.FrankWolfeMatcher
+name: 'frank_wolfe'
+permutation_spec: ??
+max_iter: 60
