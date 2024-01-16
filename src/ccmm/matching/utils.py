@@ -161,7 +161,9 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
     return permuted_params
 
 
-def weight_matching_gradient_fn(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes):
+def weight_matching_gradient_fn(
+    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_names, all_perm_indices, gradients
+):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -175,70 +177,42 @@ def weight_matching_gradient_fn(params_a, params_b, P_curr, P_prev, P_curr_name,
     # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
     params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
 
-    tot_grad_P_curr = torch.zeros_like(P_curr)
-    tot_grad_P_prev = torch.zeros_like(P_prev) if P_prev is not None else None
+    P_prev_name = None
 
     for params_name, axis in params_and_axes:
 
-        if P_curr_name == "P_final":
-            print("wtf")
         # axis != 0 will be considered when P_curr will be P_prev for some next layer
         if axis == 0:
+
+            not_visited_params[params_name].remove(0)
 
             Wa, Wb = params_a[params_name], params_b[params_name]
             assert Wa.shape == Wa.shape
 
             num_neurons = P_curr.shape[0]
 
-            params_perm_by_P_prev = [tup[0] for tup in perm_to_axes[P_prev_name]] if P_prev_name is not None else []
+            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
 
-            # TODO: fix P_final, we never get the gradient for 'layer3.2.conv2.weight'
-            if P_prev is not None and params_name in params_perm_by_P_prev:
-                # (A P_{l-1} B^T)
-                # P_{l-1} B^T
-                B_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev), x=Wb.transpose(0, 1), axis=0)
-                if len(Wb.shape) == 2:
-                    assert torch.all(B_perm == P_prev @ Wb.T)
+            if P_prev is not None:
 
-                # grad_P_curr += Wa.reshape((num_neurons, -1)) @ B_perm.reshape((num_neurons, -1))
-                # grad_P_curr += Wa @ B_perm
+                not_visited_params[params_name].remove(1)
 
-                # Using einsum to compute A * B^T
-                # The einsum string 'ijkl,jmkl->im' indicates the following operation:
-                # - 'ijkl' and 'jmkl' are the dimensions of A and B respectively.
-                # - The shared dimension 'j' indicates where the summation will occur (like in matrix multiplication).
-                # - 'im' in the output string denotes the resulting dimensions after the operation.
-                if len(Wa.shape) == 2:
-                    grad_P_curr = Wa @ B_perm
-                elif len(Wa.shape) == 3:
-                    grad_P_curr = torch.einsum("ijk,jmk->im", Wa, B_perm)
-                else:
-                    grad_P_curr = torch.einsum("ijkl,jmkl->im", Wa, B_perm)
+                grad_P_curr = compute_gradient_P_curr(Wa, Wb, P_prev)
 
-                tot_grad_P_curr += grad_P_curr
-
-                # (A^T P_l B)
-                # (P_l B)
-                Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
-                if len(Wb.shape) == 2:
-                    assert torch.all(Wb_perm == P_curr @ Wb)
-
-                if len(Wa.shape) == 2:
-                    grad_P_prev = Wa.T @ Wb_perm
-                elif len(Wa.shape) == 3:
-                    grad_P_prev = torch.einsum("ijk, jmk -> im", Wa.transpose(1, 0), Wb_perm)
-                else:
-                    grad_P_prev = torch.einsum("ijkl, jmkl -> im", Wa.transpose(1, 0), Wb_perm)
-
-                grad_P_prev += grad_P_prev
+                grad_P_prev = compute_gradient_P_prev(Wa, Wb, P_curr)
 
             else:
-                tot_grad_P_curr += Wa.reshape((num_neurons, -1)) @ Wb.reshape((num_neurons, -1)).T
+                grad_P_curr = Wa.reshape((num_neurons, -1)) @ Wb.reshape((num_neurons, -1)).T
 
-    return tot_grad_P_curr, tot_grad_P_prev
+            gradients[P_curr_name] += grad_P_curr
+
+            if P_prev is not None:
+                gradients[P_prev_name] += grad_P_prev
 
 
-def compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes):
+def compute_obj_function(
+    params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes, perm_names, all_perm_indices
+):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -262,15 +236,14 @@ def compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev
             Wa, Wb = params_a[params_name], params_b[params_name]
             assert Wa.shape == Wa.shape
 
-            # we are trying to compute <Wa_i, Pi Wb_i P_{i-1}^T>_f
-            params_perm_by_P_prev = [tup[0] for tup in perm_to_axes[P_prev_name]] if P_prev_name is not None else []
-
             # permute B according to P_i
             Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
             if len(Wb.shape) == 2:
                 assert torch.all(Wb_perm == P_curr @ Wb)
 
-            if P_prev is not None and params_name in params_perm_by_P_prev:
+            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
+
+            if P_prev is not None:
                 # also permute B according to P_{i-1}^Ts
                 # Wb_perm = Wb_perm @ P_prev.T
                 Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev).T, x=Wb_perm, axis=1)
@@ -286,11 +259,81 @@ def compute_obj_function(params_a, params_b, P_curr, P_prev, P_curr_name, P_prev
                 # - 'ijk' and 'ilk' are the dimensions of Wa and Wb respectively.
                 # - The shared dimensions 'j' and 'k' indicate where the element-wise multiplication and summation will occur.
                 # - 'ij' in the output string denotes the resulting dimensions after the operation.
-                obj += torch.trace(torch.einsum("ijk,jlk->il", Wa.transpose(1, 0), Wb)).numpy()
+                obj += torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
             else:
-                obj += torch.trace(torch.einsum("ijkm,jlkm->il", Wa.transpose(1, 0), Wb)).numpy()
+                obj += torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
 
     return obj
+
+
+def compute_gradient_P_curr(Wa, Wb, P_prev):
+    """
+    (A P_{l-1} B^T)
+    """
+    assert Wa.shape == Wb.shape
+    assert P_prev.shape[0] == Wb.shape[1]
+
+    # P_{l-1} B^T
+    B_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev), x=Wb.transpose(0, 1), axis=0)
+    if len(Wb.shape) == 2:
+        assert torch.all(B_perm == P_prev @ Wb.T)
+
+    # Using einsum to compute A * B^T
+    # The einsum string 'ijkl,jmkl->im' indicates the following operation:
+    # - 'ijkl' and 'jmkl' are the dimensions of A and B respectively.
+    # - The shared dimension 'j' indicates where the summation will occur (like in matrix multiplication).
+    # - 'im' in the output string denotes the resulting dimensions after the operation.
+    if len(Wa.shape) == 2:
+        grad_P_curr = Wa @ B_perm
+    elif len(Wa.shape) == 3:
+        grad_P_curr = torch.einsum("ijk,jmk->im", Wa, B_perm)
+    else:
+        grad_P_curr = torch.einsum("ijkl,jmkl->im", Wa, B_perm)
+
+    return grad_P_curr
+
+
+def compute_gradient_P_prev(Wa, Wb, P_curr):
+    """
+    (A^T P_l B)
+
+    """
+    assert P_curr.shape[0] == Wb.shape[0]
+
+    grad_P_prev = None
+
+    # (P_l B)
+    Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
+    if len(Wb.shape) == 2:
+        assert torch.all(Wb_perm == P_curr @ Wb)
+
+    if len(Wa.shape) == 2:
+        grad_P_prev = Wa.T @ Wb_perm
+    elif len(Wa.shape) == 3:
+        grad_P_prev = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)
+    else:
+        grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
+        # ijkm,inkm->jn
+        # ijkl, jmkl -> im (+ transpose of Wa)
+
+    return grad_P_prev
+
+
+def get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices):
+    P_prev_name, P_prev = None, None
+    for other_p in perm_names:
+
+        params_perm_by_other_p = [tup[0] if tup[1] == 1 else None for tup in perm_to_axes[other_p]]
+        if params_name in params_perm_by_other_p:
+            P_prev_name = other_p
+            P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name])
+
+    return P_prev_name, P_prev
+
+
+# ij, jl -> il
+# ij ij
+# ji ij -> jj
 
 
 # def apply_perm(perm, x, axis):

@@ -53,29 +53,34 @@ def frank_wolfe_weight_matching(
     patience_steps = 0
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
+        # keep track if the params have been permuted in both axis 0 and 1
+        not_visited_params = {
+            param_name: {0, 1} if ("bias" not in param_name and "bn" not in param_name) else {0}
+            for param_name in set(params_a.keys())
+        }
 
         perm_order = torch.arange(num_perms)
         gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p])) for p in perm_names}
 
         for p_ix in perm_order:
+
             P_curr_name = perm_names[p_ix]
-            P_prev_name = perm_names[p_ix - 1] if p_ix > 0 else None
-
             P_curr = perm_indices_to_perm_matrix(all_perm_indices[P_curr_name])
-            P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name]) if P_prev_name else None
 
-            perm_to_axes = ps.perm_to_axes
-
-            grad_P_curr, grad_P_prev = weight_matching_gradient_fn(
-                params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes
+            weight_matching_gradient_fn(
+                params_a,
+                params_b,
+                P_curr,
+                P_curr_name,
+                ps.perm_to_axes,
+                not_visited_params,
+                perm_names,
+                all_perm_indices,
+                gradients,
             )
 
-            if p_ix < num_perms:
-                gradients[P_curr_name] += grad_P_curr
-            if p_ix > 0:
-                gradients[P_prev_name] += grad_P_prev
-
         pylogger.info(f"Iteration {iteration}")
+        # pylogger.info(not_visited_params)
 
         new_obj = 0.0
 
@@ -85,6 +90,9 @@ def frank_wolfe_weight_matching(
             P_prev_name = perm_names[p_ix - 1] if p_ix > 0 else None
 
             P_curr = perm_indices_to_perm_matrix(all_perm_indices[P_curr_name])
+
+            # TODO:
+            # P_prev may not be the right one
             P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name]) if P_prev_name else None
 
             perm_to_axes = ps.perm_to_axes
@@ -98,12 +106,22 @@ def frank_wolfe_weight_matching(
             proj_grad = perm_indices_to_perm_matrix(projected_grad_indices)
 
             def fun(t):
+                # TODO: understand why the obj function returns the same value for each value of t
                 p_curr_opt = (1 - t) * P_curr + t * proj_grad
                 # TODO: understand if the projection is necessary
                 p_curr_opt = perm_indices_to_perm_matrix(solve_linear_assignment_problem(p_curr_opt))
-                return -compute_obj_function(
-                    params_a, params_b, p_curr_opt, P_prev, P_curr_name, P_prev_name, perm_to_axes
+                local_obj = -compute_obj_function(
+                    params_a,
+                    params_b,
+                    p_curr_opt,
+                    P_prev,
+                    P_curr_name,
+                    P_prev_name,
+                    perm_to_axes,
+                    perm_names,
+                    all_perm_indices,
                 )
+                return local_obj
 
             step_size = fminbound(fun, 0, 1)
 
@@ -118,6 +136,8 @@ def frank_wolfe_weight_matching(
                 P_curr_name,
                 P_prev_name,
                 perm_to_axes,
+                perm_names,
+                all_perm_indices,
             )
 
             new_obj += obj
