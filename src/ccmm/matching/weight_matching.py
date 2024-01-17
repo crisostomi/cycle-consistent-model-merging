@@ -236,9 +236,10 @@ def alternating_diffusion(
     return perm_indices
 
 
-def solve_linear_assignment_problem(sim_matrix: torch.Tensor):
+def solve_linear_assignment_problem(sim_matrix: torch.Tensor, return_matrix=False):
     ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
 
     assert (torch.tensor(ri) == torch.arange(len(ri))).all()
 
-    return torch.tensor(ci)
+    indices = torch.tensor(ci)
+    return indices if not return_matrix else perm_indices_to_perm_matrix(indices)
