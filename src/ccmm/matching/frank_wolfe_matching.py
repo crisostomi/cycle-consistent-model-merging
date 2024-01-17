@@ -73,7 +73,6 @@ def frank_wolfe_weight_matching(
                 perm_name,
                 ps.perm_to_layers_and_axes,
                 not_visited_params,
-                perm_ids,
                 perm_matrices,
                 gradients,
             )
@@ -85,36 +84,21 @@ def frank_wolfe_weight_matching(
 
         new_obj = 0.0
 
-        single_perm_obj_func = partial(
-            compute_single_perm_obj_function,
-            params_a=params_a,
-            params_b=params_b,
-            perm_to_axes=ps.perm_to_layers_and_axes,
-            perm_matrices=perm_matrices,
-        )
-
         line_search_step_func = partial(
             line_search_global_step,
             proj_grads=proj_grads,
-            obj_func=single_perm_obj_func,
             perm_matrices=perm_matrices,
+            params_a=params_a,
+            params_b=params_b,
+            layers_and_axes_to_perms=ps.layer_and_axes_to_perm,
         )
         step_size = fminbound(line_search_step_func, 0, 1)
 
         pylogger.info(f"Step size: {step_size}")
 
-        for perm_name, perm in perm_matrices.items():
+        perm_matrices = update_perm_matrices(perm_matrices, proj_grads, step_size)
 
-            if perm_name in {"P_final", "P_4"}:
-                continue
-
-            proj_grad = proj_grads[perm_name]
-
-            new_P_curr_interp = (1 - step_size) * perm + step_size * proj_grad
-            new_P_curr = solve_linear_assignment_problem(new_P_curr_interp, return_matrix=True)
-            perm_matrices[perm_name] = new_P_curr
-
-        new_obj = get_global_obj(perm_matrices, single_perm_obj_func)
+        new_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, ps.layer_and_axes_to_perm)
 
         pylogger.info(f"Objective: {np.round(new_obj, 6)}")
 
@@ -146,19 +130,22 @@ def project_gradients(gradients):
 
 
 def line_search_global_step(
-    t: float, proj_grads: Dict[str, torch.Tensor], obj_func: callable, perm_matrices: Dict[str, PermutationIndices]
+    t: float,
+    params_a,
+    params_b,
+    proj_grads: Dict[str, torch.Tensor],
+    perm_matrices: Dict[str, PermutationIndices],
+    layers_and_axes_to_perms,
 ):
 
-    tot_obj = 0.0
+    interpolated_perms = {}
 
     for perm_name, perm in perm_matrices.items():
-
         proj_grad = proj_grads[perm_name]
 
-        P_curr_opt = (1 - t) * perm + t * proj_grad
+        interpolated_perms[perm_name] = (1 - t) * perm + t * proj_grad
 
-        local_obj = obj_func(P_curr=P_curr_opt, P_curr_name=perm_name)
-        tot_obj += local_obj
+    tot_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_to_perms)
 
     return -tot_obj
 
@@ -174,6 +161,34 @@ def get_global_obj(perm_matrices, local_obj_func):
     return tot_obj
 
 
+def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_to_perms):
+
+    tot_obj = 0.0
+
+    for layer, axes_and_perms in layers_and_axes_to_perms.items():
+        assert layer in params_a.keys()
+        assert layer in params_b.keys()
+
+        Wa, Wb = params_a[layer], params_b[layer]
+        if Wa.dim() == 1:
+            Wa = Wa.unsqueeze(1)
+            Wb = Wb.unsqueeze(1)
+
+        row_perm_id = axes_and_perms[0]
+        assert row_perm_id is None or row_perm_id in perm_matrices.keys()
+        row_perm = perm_matrices[row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0])
+
+        col_perm_id = axes_and_perms[1] if len(axes_and_perms) > 1 else None
+        assert col_perm_id is None or col_perm_id in perm_matrices.keys()
+        col_perm = perm_matrices[col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1])
+
+        layer_similarity = compute_layer_similarity(Wa, Wb, row_perm, col_perm)
+
+        tot_obj += layer_similarity
+
+    return tot_obj
+
+
 def line_search_step(t, P_curr, proj_grad, obj_func):
     p_curr_opt = (1 - t) * P_curr + t * proj_grad
 
@@ -184,7 +199,7 @@ def line_search_step(t, P_curr, proj_grad, obj_func):
 
 
 def weight_matching_gradient_fn(
-    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_names, perm_matrices, gradients
+    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_matrices, gradients
 ):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
@@ -257,35 +272,41 @@ def compute_single_perm_obj_function(params_a, params_b, P_curr, P_curr_name, pe
             Wa, Wb = params_a[params_name], params_b[params_name]
             assert Wa.shape == Wa.shape
 
-            # (P_i Wb_i) P_{i-1}^T
-
-            # (P_i Wb_i)
-            Wb_perm = perm_rows(perm=P_curr, x=Wb)
-            if len(Wb.shape) == 2 and debug:
-                assert torch.all(Wb_perm == P_curr @ Wb)
-
             P_prev_name, P_prev = get_prev_permutation(params_name, perm_to_axes, perm_matrices)
 
-            if P_prev is not None:
-                # (P_i Wb_i) P_{i-1}^T
-                Wb_perm = perm_cols(x=Wb_perm, perm=P_prev.T)
+            layer_similarity = compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=debug)
 
-                if len(Wb.shape) == 2 and debug:
-                    assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
-
-            if len(Wa.shape) == 1:
-                # vector case, result is the dot product of the vectors A^T B
-                obj += Wa.T @ Wb_perm
-            elif len(Wa.shape) == 2:
-                # matrix case, result is the trace of the matrix product A^T B
-                obj += torch.trace(Wa.T @ Wb_perm).numpy()
-            elif len(Wa.shape) == 3:
-                # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
-                obj += torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
-            else:
-                obj += torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+            obj += layer_similarity
 
     return obj
+
+
+def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
+    # (P_i Wb_i) P_{i-1}^T
+
+    # (P_i Wb_i)
+    Wb_perm = perm_rows(perm=P_curr, x=Wb)
+    if len(Wb.shape) == 2 and debug:
+        assert torch.all(Wb_perm == P_curr @ Wb)
+
+    if P_prev is not None:
+        # (P_i Wb_i) P_{i-1}^T
+        Wb_perm = perm_cols(x=Wb_perm, perm=P_prev.T)
+
+        if len(Wb.shape) == 2 and debug:
+            assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
+
+    if len(Wa.shape) == 1:
+        # vector case, result is the dot product of the vectors A^T B
+        return Wa.T @ Wb_perm
+    elif len(Wa.shape) == 2:
+        # matrix case, result is the trace of the matrix product A^T B
+        return torch.trace(Wa.T @ Wb_perm).numpy()
+    elif len(Wa.shape) == 3:
+        # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
+        return torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+    else:
+        return torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
 
 
 def compute_gradient_P_curr(Wa, Wb, P_prev):
@@ -382,3 +403,20 @@ def perm_cols(x, perm):
     permuted_x = perm_rows(x=x, perm=perm)
 
     return permuted_x.transpose(1, 0)
+
+
+def update_perm_matrices(perm_matrices, proj_grads, step_size):
+    new_perm_matrices = {}
+
+    for perm_name, perm in perm_matrices.items():
+
+        if perm_name in {"P_final", "P_4"}:
+            new_perm_matrices[perm_name] = perm
+            continue
+
+        proj_grad = proj_grads[perm_name]
+
+        new_P_curr_interp = (1 - step_size) * perm + step_size * proj_grad
+        new_perm_matrices[perm_name] = solve_linear_assignment_problem(new_P_curr_interp, return_matrix=True)
+
+    return new_perm_matrices
