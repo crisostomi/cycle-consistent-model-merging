@@ -47,7 +47,7 @@ def frank_wolfe_weight_matching(
 
     # initialize with identity permutation
     all_perm_indices: Dict[str, PermutationIndices] = {p: torch.arange(n) for p, n in perm_sizes.items()}
-    all_perm_matrices: Dict[str, PermutationMatrix] = {p: torch.eye(n) for p, n in perm_sizes.items()}
+    perm_matrices: Dict[str, PermutationMatrix] = {p: torch.eye(n) for p, n in perm_sizes.items()}
 
     # e.g. P0, P1, ..
     perm_ids = list(all_perm_indices.keys())
@@ -64,7 +64,7 @@ def frank_wolfe_weight_matching(
 
         gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p])) for p in perm_ids}
 
-        for perm_name, perm in all_perm_matrices.items():
+        for perm_name, perm in perm_matrices.items():
 
             weight_matching_gradient_fn(
                 params_a,
@@ -74,14 +74,14 @@ def frank_wolfe_weight_matching(
                 ps.perm_to_layers_and_axes,
                 not_visited_params,
                 perm_ids,
-                all_perm_matrices,
+                perm_matrices,
                 gradients,
             )
 
         pylogger.info(f"Iteration {iteration}")
         # pylogger.info(not_visited_params)
 
-        proj_grads = project_gradients(gradients, all_perm_matrices)
+        proj_grads = project_gradients(gradients)
 
         new_obj = 0.0
 
@@ -90,21 +90,20 @@ def frank_wolfe_weight_matching(
             params_a=params_a,
             params_b=params_b,
             perm_to_axes=ps.perm_to_layers_and_axes,
-            perm_names=perm_ids,
-            all_perm_matrices=all_perm_matrices,
+            perm_matrices=perm_matrices,
         )
 
         line_search_step_func = partial(
             line_search_global_step,
             proj_grads=proj_grads,
             obj_func=single_perm_obj_func,
-            all_perm_matrices=all_perm_matrices,
+            perm_matrices=perm_matrices,
         )
         step_size = fminbound(line_search_step_func, 0, 1)
 
         pylogger.info(f"Step size: {step_size}")
 
-        for perm_name, perm in all_perm_matrices.items():
+        for perm_name, perm in perm_matrices.items():
 
             if perm_name in {"P_final", "P_4"}:
                 continue
@@ -113,11 +112,12 @@ def frank_wolfe_weight_matching(
 
             new_P_curr_interp = (1 - step_size) * perm + step_size * proj_grad
             new_P_curr = solve_linear_assignment_problem(new_P_curr_interp, return_matrix=True)
-            all_perm_matrices[perm_name] = new_P_curr
+            perm_matrices[perm_name] = new_P_curr
 
-        new_obj = get_global_obj(all_perm_matrices, single_perm_obj_func)
+        new_obj = get_global_obj(perm_matrices, single_perm_obj_func)
 
-        pylogger.info(f"Objective: {np.round(new_obj, 8)}")
+        pylogger.info(f"Objective: {np.round(new_obj, 6)}")
+
         if abs(old_obj - new_obj) < 1e-3:
             patience_steps += 1
         else:
@@ -128,17 +128,15 @@ def frank_wolfe_weight_matching(
         if patience_steps >= 10:
             break
 
-    all_perm_indices = {p: perm_matrix_to_perm_indices(perm) for p, perm in all_perm_matrices.items()}
+    all_perm_indices = {p: perm_matrix_to_perm_indices(perm) for p, perm in perm_matrices.items()}
 
     return all_perm_indices
 
 
-def project_gradients(gradients, all_perm_matrices):
+def project_gradients(gradients):
     proj_grads = {}
 
-    for perm_name in all_perm_matrices.keys():
-
-        grad = gradients[perm_name]
+    for perm_name, grad in gradients.items():
 
         proj_grad = solve_linear_assignment_problem(grad, return_matrix=True)
 
@@ -148,12 +146,12 @@ def project_gradients(gradients, all_perm_matrices):
 
 
 def line_search_global_step(
-    t: float, proj_grads: Dict[str, torch.Tensor], obj_func: callable, all_perm_matrices: Dict[str, PermutationIndices]
+    t: float, proj_grads: Dict[str, torch.Tensor], obj_func: callable, perm_matrices: Dict[str, PermutationIndices]
 ):
 
     tot_obj = 0.0
 
-    for perm_name, perm in all_perm_matrices.items():
+    for perm_name, perm in perm_matrices.items():
 
         proj_grad = proj_grads[perm_name]
 
@@ -165,10 +163,10 @@ def line_search_global_step(
     return -tot_obj
 
 
-def get_global_obj(all_perm_matrices, local_obj_func):
+def get_global_obj(perm_matrices, local_obj_func):
     tot_obj = 0.0
 
-    for perm_name, perm in all_perm_matrices.items():
+    for perm_name, perm in perm_matrices.items():
 
         local_obj = local_obj_func(P_curr=perm, P_curr_name=perm_name)
         tot_obj += local_obj
@@ -186,7 +184,7 @@ def line_search_step(t, P_curr, proj_grad, obj_func):
 
 
 def weight_matching_gradient_fn(
-    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_names, all_perm_matrices, gradients
+    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_names, perm_matrices, gradients
 ):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
@@ -215,7 +213,7 @@ def weight_matching_gradient_fn(
                 Wa = Wa.unsqueeze(1)
                 Wb = Wb.unsqueeze(1)
 
-            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_matrices)
+            P_prev_name, P_prev = get_prev_permutation(params_name, perm_to_axes, perm_matrices)
 
             if not is_last_layer(params_and_axes):
                 not_visited_params[params_name].remove(0)
@@ -235,9 +233,7 @@ def is_last_layer(params_and_axes):
     return len(params_and_axes) == 1
 
 
-def compute_single_perm_obj_function(
-    params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_names, all_perm_matrices, debug=True
-):
+def compute_single_perm_obj_function(params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_matrices, debug=True):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -268,7 +264,7 @@ def compute_single_perm_obj_function(
             if len(Wb.shape) == 2 and debug:
                 assert torch.all(Wb_perm == P_curr @ Wb)
 
-            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_matrices)
+            P_prev_name, P_prev = get_prev_permutation(params_name, perm_to_axes, perm_matrices)
 
             if P_prev is not None:
                 # (P_i Wb_i) P_{i-1}^T
@@ -342,15 +338,16 @@ def compute_gradient_P_prev(Wa, Wb, P_curr):
     return grad_P_prev
 
 
-def get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_matrices):
+def get_prev_permutation(params_name, perm_to_axes, perm_matrices):
     P_prev_name, P_prev = None, None
-    for other_p in perm_names:
+
+    for other_perm_name, other_perm in perm_matrices.items():
 
         # all the layers that are column-permuted by other_p
-        params_perm_by_other_p = [tup[0] if tup[1] == 1 else None for tup in perm_to_axes[other_p]]
+        params_perm_by_other_p = [tup[0] if tup[1] == 1 else None for tup in perm_to_axes[other_perm_name]]
         if params_name in params_perm_by_other_p:
-            P_prev_name = other_p
-            P_prev = all_perm_matrices[P_prev_name]
+            P_prev_name = other_perm_name
+            P_prev = other_perm
 
     return P_prev_name, P_prev
 
