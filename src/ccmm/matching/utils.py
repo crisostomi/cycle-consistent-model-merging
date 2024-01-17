@@ -210,9 +210,7 @@ def weight_matching_gradient_fn(
                 gradients[P_prev_name] += grad_P_prev
 
 
-def compute_obj_function(
-    params_a, params_b, P_curr, P_prev, P_curr_name, P_prev_name, perm_to_axes, perm_names, all_perm_indices
-):
+def compute_obj_function(params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_names, all_perm_indices):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}

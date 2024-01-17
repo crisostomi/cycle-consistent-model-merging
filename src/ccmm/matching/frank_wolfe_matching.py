@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 
 import numpy as np
 import torch
@@ -32,10 +33,10 @@ def frank_wolfe_weight_matching(
     perm_sizes = {}
 
     # FOR MLP
-    # ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
+    ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    ps.perm_to_axes["P_final"] = [("linear.weight", 0)]
+    # ps.perm_to_axes["P_final"] = [("linear.weight", 0)]
 
     for perm_name, params_and_axes in ps.perm_to_axes.items():
         # params_and_axes is a list of tuples, e.g. [('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..]
@@ -87,61 +88,35 @@ def frank_wolfe_weight_matching(
         for p_ix in perm_order[:-1]:
 
             P_curr_name = perm_names[p_ix]
-            P_prev_name = perm_names[p_ix - 1] if p_ix > 0 else None
-
             P_curr = perm_indices_to_perm_matrix(all_perm_indices[P_curr_name])
 
-            # TODO:
-            # P_prev may not be the right one
-            P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name]) if P_prev_name else None
-
-            perm_to_axes = ps.perm_to_axes
-
             # (num_neurons, num_neurons)
-            # TODO: check wtf is going on, using the gradient or its transpose doesn't make any difference
             grad = gradients[P_curr_name]
 
             projected_grad_indices = solve_linear_assignment_problem(grad)
-
             proj_grad = perm_indices_to_perm_matrix(projected_grad_indices)
 
-            def fun(t):
-                # TODO: understand why the obj function returns the same value for each value of t
-                p_curr_opt = (1 - t) * P_curr + t * proj_grad
-                # TODO: understand if the projection is necessary
-                p_curr_opt = perm_indices_to_perm_matrix(solve_linear_assignment_problem(p_curr_opt))
-                local_obj = -compute_obj_function(
-                    params_a,
-                    params_b,
-                    p_curr_opt,
-                    P_prev,
-                    P_curr_name,
-                    P_prev_name,
-                    perm_to_axes,
-                    perm_names,
-                    all_perm_indices,
-                )
-                return local_obj
+            obj_func = partial(
+                compute_obj_function,
+                params_a=params_a,
+                params_b=params_b,
+                perm_to_axes=ps.perm_to_axes,
+                P_curr_name=P_curr_name,
+                perm_names=perm_names,
+                all_perm_indices=all_perm_indices,
+            )
 
-            step_size = fminbound(fun, 0, 1)
+            line_search_step_func = partial(line_search_step, P_curr=P_curr, proj_grad=proj_grad, obj_func=obj_func)
+            step_size = fminbound(line_search_step_func, 0, 1)
 
             new_P_curr_interp = (1 - step_size) * P_curr + step_size * (proj_grad)
             new_P_curr = solve_linear_assignment_problem(new_P_curr_interp)
 
-            obj = compute_obj_function(
-                params_a,
-                params_b,
-                perm_indices_to_perm_matrix(new_P_curr),
-                P_prev,
-                P_curr_name,
-                P_prev_name,
-                perm_to_axes,
-                perm_names,
-                all_perm_indices,
+            obj = obj_func(
+                P_curr=perm_indices_to_perm_matrix(new_P_curr),
             )
 
             new_obj += obj
-
             pylogger.info(f"{P_curr_name} step_size: {np.round(step_size, 4)}, obj {np.round(obj, 4)}")
 
             # TODO: check that it is correct to use the just computed perm or if we should assign a new all_perm_indices
@@ -159,3 +134,15 @@ def frank_wolfe_weight_matching(
             break
 
     return all_perm_indices
+
+
+def line_search_step(t, P_curr, proj_grad, obj_func):
+    p_curr_opt = (1 - t) * P_curr + t * proj_grad
+    # TODO: understand if the projection is necessary
+    # (in theory it shouldn't be, but then we have to permute stuff with a soft permutation)
+    p_curr_opt = perm_indices_to_perm_matrix(solve_linear_assignment_problem(p_curr_opt))
+
+    local_obj = -obj_func(
+        P_curr=p_curr_opt,
+    )
+    return local_obj
