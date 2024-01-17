@@ -8,7 +8,7 @@ from scipy.optimize import fminbound
 from tqdm import tqdm
 
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_matrix_to_perm_indices
+from ccmm.matching.utils import PermutationIndices, PermutationMatrix
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
 from ccmm.utils.utils import ModelParams
 
@@ -34,10 +34,10 @@ def frank_wolfe_weight_matching(
     perm_sizes = {}
 
     # FOR MLP
-    # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
+    ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
 
     for perm_name, params_and_axes in ps.perm_to_layers_and_axes.items():
         # params_and_axes is a list of tuples, e.g. [('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..]
@@ -94,7 +94,7 @@ def frank_wolfe_weight_matching(
         if patience_steps >= 15:
             break
 
-    all_perm_indices = {p: perm_matrix_to_perm_indices(perm) for p, perm in perm_matrices.items()}
+    all_perm_indices = {p: solve_linear_assignment_problem(perm) for p, perm in perm_matrices.items()}
 
     return all_perm_indices
 
@@ -292,14 +292,14 @@ def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
     # (P_i Wb_i)
     Wb_perm = perm_rows(perm=P_curr, x=Wb)
     if len(Wb.shape) == 2 and debug:
-        assert torch.all(Wb_perm == P_curr @ Wb)
+        assert torch.allclose(Wb_perm, P_curr @ Wb)
 
     if P_prev is not None:
         # (P_i Wb_i) P_{i-1}^T
         Wb_perm = perm_cols(x=Wb_perm, perm=P_prev.T)
 
         if len(Wb.shape) == 2 and debug:
-            assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
+            assert torch.allclose(Wb_perm, P_curr @ Wb @ P_prev.T)
 
     if len(Wa.shape) == 1:
         # vector case, result is the dot product of the vectors A^T B
@@ -422,6 +422,6 @@ def update_perm_matrices(perm_matrices, proj_grads, step_size):
         proj_grad = proj_grads[perm_name]
 
         new_P_curr_interp = (1 - step_size) * perm + step_size * proj_grad
-        new_perm_matrices[perm_name] = solve_linear_assignment_problem(new_P_curr_interp, return_matrix=True)
+        new_perm_matrices[perm_name] = new_P_curr_interp
 
     return new_perm_matrices
