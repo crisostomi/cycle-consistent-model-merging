@@ -14,6 +14,7 @@ from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 from scipy.interpolate import interp1d
 from scipy.misc import derivative
 
+from nn_core.common import PROJECT_ROOT
 from nn_core.serialization import load_model
 
 ModelParams = Dict[str, torch.Tensor]
@@ -166,11 +167,12 @@ def block(i, j, n):
 def load_model_from_info(model_info_path, seed=None, zipped=True):
     suffix = "" if seed is None else f"_{seed}.json"
     model_info_path_seed = model_info_path + suffix
+
     model_info = json.load(open(model_info_path_seed))
     model_class = locate(model_info["class"])
 
     suffix = ".zip" if zipped else ""
-    model = load_model(model_class, checkpoint_path=Path(model_info["path"] + suffix))
+    model = load_model(model_class, checkpoint_path=Path(str(PROJECT_ROOT) + "/" + model_info["path"] + suffix))
     model.eval()
 
     return model
