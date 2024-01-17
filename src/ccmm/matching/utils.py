@@ -210,7 +210,9 @@ def weight_matching_gradient_fn(
                 gradients[P_prev_name] += grad_P_prev
 
 
-def compute_obj_function(params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_names, all_perm_indices):
+def compute_obj_function(
+    params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_names, all_perm_indices, debug=False
+):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -236,7 +238,7 @@ def compute_obj_function(params_a, params_b, P_curr, P_curr_name, perm_to_axes, 
 
             # permute B according to P_i
             Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
-            if len(Wb.shape) == 2:
+            if len(Wb.shape) == 2 and debug:
                 assert torch.all(Wb_perm == P_curr @ Wb)
 
             P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
@@ -245,18 +247,17 @@ def compute_obj_function(params_a, params_b, P_curr, P_curr_name, perm_to_axes, 
                 # also permute B according to P_{i-1}^Ts
                 # Wb_perm = Wb_perm @ P_prev.T
                 Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev).T, x=Wb_perm, axis=1)
-                if len(Wb.shape) == 2:
+                if len(Wb.shape) == 2 and debug:
                     assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
 
             if len(Wa.shape) == 1:
+                # vector case, result is the dot product of the vectors A^T B
                 obj += Wa.T @ Wb_perm
             elif len(Wa.shape) == 2:
+                # matrix case, result is the trace of the matrix product A^T B
                 obj += torch.trace(Wa.T @ Wb_perm).numpy()
             elif len(Wa.shape) == 3:
-                # The einsum string 'ijk,ilk->ij' indicates the following operation:
-                # - 'ijk' and 'ilk' are the dimensions of Wa and Wb respectively.
-                # - The shared dimensions 'j' and 'k' indicate where the element-wise multiplication and summation will occur.
-                # - 'ij' in the output string denotes the resulting dimensions after the operation.
+                # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
                 obj += torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
             else:
                 obj += torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
@@ -276,17 +277,12 @@ def compute_gradient_P_curr(Wa, Wb, P_prev):
     if len(Wb.shape) == 2:
         assert torch.all(B_perm == P_prev @ Wb.T)
 
-    # Using einsum to compute A * B^T
-    # The einsum string 'ijkl,jmkl->im' indicates the following operation:
-    # - 'ijkl' and 'jmkl' are the dimensions of A and B respectively.
-    # - The shared dimension 'j' indicates where the summation will occur (like in matrix multiplication).
-    # - 'im' in the output string denotes the resulting dimensions after the operation.
     if len(Wa.shape) == 2:
         grad_P_curr = Wa @ B_perm
     elif len(Wa.shape) == 3:
-        grad_P_curr = torch.einsum("ijk,jmk->im", Wa, B_perm)
+        grad_P_curr = torch.einsum("ijk,jnk->in", Wa, B_perm)
     else:
-        grad_P_curr = torch.einsum("ijkl,jmkl->im", Wa, B_perm)
+        grad_P_curr = torch.einsum("ijkm,jnkm->in", Wa, B_perm)
 
     return grad_P_curr
 
@@ -311,8 +307,6 @@ def compute_gradient_P_prev(Wa, Wb, P_curr):
         grad_P_prev = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)
     else:
         grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
-        # ijkm,inkm->jn
-        # ijkl, jmkl -> im (+ transpose of Wa)
 
     return grad_P_prev
 
@@ -327,11 +321,6 @@ def get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices
             P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name])
 
     return P_prev_name, P_prev
-
-
-# ij, jl -> il
-# ij ij
-# ji ij -> jj
 
 
 # def apply_perm(perm, x, axis):

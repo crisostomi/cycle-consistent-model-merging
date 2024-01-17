@@ -33,10 +33,10 @@ def frank_wolfe_weight_matching(
     perm_sizes = {}
 
     # FOR MLP
-    ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
+    # ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    # ps.perm_to_axes["P_final"] = [("linear.weight", 0)]
+    ps.perm_to_axes["P_final"] = [("linear.weight", 0)]
 
     for perm_name, params_and_axes in ps.perm_to_axes.items():
         # params_and_axes is a list of tuples, e.g. [('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..]
