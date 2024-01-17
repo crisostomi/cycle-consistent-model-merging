@@ -35,7 +35,7 @@ def run(cfg: DictConfig) -> str:
     permutation_spec = permutation_spec_builder.create_permutation()
 
     ref_model = list(models.values())[0]
-    assert set(permutation_spec.axes_to_perm.keys()) == set(ref_model.model.state_dict().keys())
+    assert set(permutation_spec.layer_and_axes_to_perm.keys()) == set(ref_model.model.state_dict().keys())
 
     # always permute the model having larger character order, i.e. c -> b, b -> a and so on ...
     symbols = set(symbols_to_seed.keys())

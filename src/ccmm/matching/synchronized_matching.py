@@ -35,7 +35,7 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
     pylogger.info(f"a: {a}, b: {b}, c: {c}")
 
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
-    perm_sizes = {p: params[a][axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
+    perm_sizes = {p: params[a][axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_layers_and_axes.items()}
 
     # {'a': {'b': 'P0': P_AB_0, 'c': ....}, .... }. N.B. it's unsorted. P[a][b] refers to the permutation to map b -> a
     # i.e. P[fixed][permutee] maps permutee to fixed target
@@ -67,7 +67,7 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
 
             # all the params that are permuted by this permutation matrix, together with the axis on which it acts
             # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
-            params_and_axes = ps.perm_to_axes[p]
+            params_and_axes = ps.perm_to_layers_and_axes[p]
 
             for params_name, axis in params_and_axes:
                 w_a = copy.deepcopy(params[a][params_name])
@@ -76,7 +76,7 @@ def synchronized_weight_matching(models, ps: PermutationSpec, method, symbols, c
 
                 assert w_a.shape == w_b.shape and w_b.shape == w_c.shape
 
-                perms_to_apply = ps.axes_to_perm[params_name]
+                perms_to_apply = ps.layer_and_axes_to_perm[params_name]
 
                 # ASSUMPTION: given A, B, we always permute B to match A
 

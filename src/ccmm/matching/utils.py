@@ -5,7 +5,6 @@ from typing import Dict, List, Set, Tuple
 
 import torch
 from pytorch_lightning import LightningModule
-from scipy.optimize import fminbound
 from torch import Tensor
 
 from ccmm.matching.permutation_spec import PermutationSpec
@@ -105,7 +104,9 @@ def create_artificially_permuted_models(
         orig_params = seed_model.model.state_dict()
 
         # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
-        perm_sizes = {p: orig_params[axes[0][0]].shape[axes[0][1]] for p, axes in permutation_spec.perm_to_axes.items()}
+        perm_sizes = {
+            p: orig_params[axes[0][0]].shape[axes[0][1]] for p, axes in permutation_spec.perm_to_layers_and_axes.items()
+        }
 
         # initialize with identity permutation if none given
         perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()}
@@ -153,7 +154,7 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
 
     for param_name, param in all_params.items():
         param = copy.deepcopy(param)
-        perms_to_apply = ps.axes_to_perm[param_name]
+        perms_to_apply = ps.layer_and_axes_to_perm[param_name]
 
         param = get_permuted_param(param, perms_to_apply, perm_matrices)
         permuted_params[param_name] = param
@@ -161,166 +162,53 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
     return permuted_params
 
 
-def weight_matching_gradient_fn(
-    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_names, all_perm_indices, gradients
-):
-    """
-    Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
-    sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
+# def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):
+#     """
+#     Maximise an objective f over block permutation matrices.
 
-    Returns:
-        grad_P_curr: Gradient of objective function w.r.t. P_curr.
-        grad_P_prev: Gradient of objective function w.r.t. P_prev.
-    """
+#     Args:
+#         W: Data involved in the objective function.
+#         X0: Initialisation matrix.
 
-    # all the params that are permuted by this permutation matrix, together with the axis on which it acts
-    # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
-    params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
+#     Returns:
+#         X: Optimised matrix.
+#         obj_vals: Objective values at each iteration.
+#     """
+#     n_max_fw_iters = 1000
+#     convergence_threshold = 1e-6
+#     X_old = X0
 
-    P_prev_name = None
+#     obj_vals = [get_objective_fn(X_old, W)]
 
-    for params_name, axis in params_and_axes:
+#     for jj in range(n_max_fw_iters):
 
-        # axis != 0 will be considered when P_curr will be P_prev for some next layer
-        if axis == 0:
+#         grad_f = get_gradient_fn(X_old)  # Function that computes gradient of f w.r.t. X_old.
 
-            not_visited_params[params_name].remove(0)
+#         grad_f_scaled = -grad_f  # Flip sign since we want to maximise.
 
-            Wa, Wb = params_a[params_name], params_b[params_name]
-            assert Wa.shape == Wa.shape
+#         # Project gradient onto set of permutation matrices
+#         D = grad_f_scaled  # project_onto_partial_perm_blockwise(grad_f_scaled)
 
-            num_neurons = P_curr.shape[0]
+#         # Line search to find step size (convex combination of X_old and D)
+#         D_minus_X_old = D - X_old
 
-            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
+#         def fun(t):
+#             return get_objective_fn(X_old + t * D_minus_X_old)
 
-            if P_prev is not None:
+#         eta = fminbound(fun, 0, 1)
 
-                not_visited_params[params_name].remove(1)
+#         X = X_old + eta * D_minus_X_old
 
-                grad_P_curr = compute_gradient_P_curr(Wa, Wb, P_prev)
+#         # Check convergence
+#         obj_val = get_objective_fn(X, W)
+#         obj_vals.append(obj_val)
 
-                grad_P_prev = compute_gradient_P_prev(Wa, Wb, P_curr)
+#         if abs(obj_val / obj_vals[-2] - 1) < convergence_threshold:
+#             break
 
-            else:
-                grad_P_curr = Wa.reshape((num_neurons, -1)) @ Wb.reshape((num_neurons, -1)).T
+#         X_old = X
 
-            gradients[P_curr_name] += grad_P_curr
-
-            if P_prev is not None:
-                gradients[P_prev_name] += grad_P_prev
-
-
-def compute_obj_function(
-    params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_names, all_perm_indices, debug=False
-):
-    """
-    Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
-    sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
-
-    Returns:
-        grad_P_curr: Gradient of objective function w.r.t. P_curr.
-        grad_P_prev: Gradient of objective function w.r.t. P_prev.
-    """
-
-    # all the params that are permuted by this permutation matrix, together with the axis on which it acts
-    # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
-    params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
-
-    obj = 0.0
-
-    for params_name, axis in params_and_axes:
-
-        # axis != 0 will be considered when P_curr will be P_prev for some next layer
-        if axis == 0:
-
-            Wa, Wb = params_a[params_name], params_b[params_name]
-            assert Wa.shape == Wa.shape
-
-            # permute B according to P_i
-            Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
-            if len(Wb.shape) == 2 and debug:
-                assert torch.all(Wb_perm == P_curr @ Wb)
-
-            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
-
-            if P_prev is not None:
-                # also permute B according to P_{i-1}^Ts
-                # Wb_perm = Wb_perm @ P_prev.T
-                Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev).T, x=Wb_perm, axis=1)
-                if len(Wb.shape) == 2 and debug:
-                    assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
-
-            if len(Wa.shape) == 1:
-                # vector case, result is the dot product of the vectors A^T B
-                obj += Wa.T @ Wb_perm
-            elif len(Wa.shape) == 2:
-                # matrix case, result is the trace of the matrix product A^T B
-                obj += torch.trace(Wa.T @ Wb_perm).numpy()
-            elif len(Wa.shape) == 3:
-                # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
-                obj += torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
-            else:
-                obj += torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
-
-    return obj
-
-
-def compute_gradient_P_curr(Wa, Wb, P_prev):
-    """
-    (A P_{l-1} B^T)
-    """
-    assert Wa.shape == Wb.shape
-    assert P_prev.shape[0] == Wb.shape[1]
-
-    # P_{l-1} B^T
-    B_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_prev), x=Wb.transpose(0, 1), axis=0)
-    if len(Wb.shape) == 2:
-        assert torch.all(B_perm == P_prev @ Wb.T)
-
-    if len(Wa.shape) == 2:
-        grad_P_curr = Wa @ B_perm
-    elif len(Wa.shape) == 3:
-        grad_P_curr = torch.einsum("ijk,jnk->in", Wa, B_perm)
-    else:
-        grad_P_curr = torch.einsum("ijkm,jnkm->in", Wa, B_perm)
-
-    return grad_P_curr
-
-
-def compute_gradient_P_prev(Wa, Wb, P_curr):
-    """
-    (A^T P_l B)
-
-    """
-    assert P_curr.shape[0] == Wb.shape[0]
-
-    grad_P_prev = None
-
-    # (P_l B)
-    Wb_perm = apply_perm(perm=perm_matrix_to_perm_indices(P_curr), x=Wb, axis=0)
-    if len(Wb.shape) == 2:
-        assert torch.all(Wb_perm == P_curr @ Wb)
-
-    if len(Wa.shape) == 2:
-        grad_P_prev = Wa.T @ Wb_perm
-    elif len(Wa.shape) == 3:
-        grad_P_prev = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)
-    else:
-        grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
-
-    return grad_P_prev
-
-
-def get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices):
-    P_prev_name, P_prev = None, None
-    for other_p in perm_names:
-
-        params_perm_by_other_p = [tup[0] if tup[1] == 1 else None for tup in perm_to_axes[other_p]]
-        if params_name in params_perm_by_other_p:
-            P_prev_name = other_p
-            P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name])
-
-    return P_prev_name, P_prev
+#     return X, obj_vals
 
 
 # def apply_perm(perm, x, axis):
@@ -344,81 +232,3 @@ def get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices
 #     x_permuted = x_permuted.moveaxis(0, axis)
 
 #     return x_permuted
-
-
-def apply_perm(x, perm, axis):
-    """
-    Permute a tensor along a specified axis.
-
-    Parameters:
-    X (torch.Tensor): The input tensor, can be 1D, 2D, 3D, or 4D.
-    P (list or torch.Tensor): The permutation to be applied.
-    axis (int): The axis along which to permute.
-
-    Returns:
-    torch.Tensor: The permuted tensor.
-    """
-    # Ensure P is a torch.Tensor
-    if not isinstance(perm, torch.Tensor):
-        perm = torch.tensor(perm)
-
-    # Check if the axis is valid for the tensor dimensions
-    if axis < 0 or axis >= x.dim():
-        raise ValueError("Axis is out of bounds for the tensor dimensions")
-
-    # Permute the tensor
-    # Generate indices for all dimensions
-    idx = [slice(None)] * x.dim()
-    # Set the indices for the specified axis to the permutation
-    idx[axis] = perm
-
-    return x[idx]
-
-
-def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):
-    """
-    Maximise an objective f over block permutation matrices.
-
-    Args:
-        W: Data involved in the objective function.
-        X0: Initialisation matrix.
-
-    Returns:
-        X: Optimised matrix.
-        obj_vals: Objective values at each iteration.
-    """
-    n_max_fw_iters = 1000
-    convergence_threshold = 1e-6
-    X_old = X0
-
-    obj_vals = [get_objective_fn(X_old, W)]
-
-    for jj in range(n_max_fw_iters):
-
-        grad_f = get_gradient_fn(X_old)  # Function that computes gradient of f w.r.t. X_old.
-
-        grad_f_scaled = -grad_f  # Flip sign since we want to maximise.
-
-        # Project gradient onto set of permutation matrices
-        D = grad_f_scaled  # project_onto_partial_perm_blockwise(grad_f_scaled)
-
-        # Line search to find step size (convex combination of X_old and D)
-        D_minus_X_old = D - X_old
-
-        def fun(t):
-            return get_objective_fn(X_old + t * D_minus_X_old)
-
-        eta = fminbound(fun, 0, 1)
-
-        X = X_old + eta * D_minus_X_old
-
-        # Check convergence
-        obj_val = get_objective_fn(X, W)
-        obj_vals.append(obj_val)
-
-        if abs(obj_val / obj_vals[-2] - 1) < convergence_threshold:
-            break
-
-        X_old = X
-
-    return X, obj_vals

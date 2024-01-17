@@ -1,5 +1,6 @@
 import logging
 from functools import partial
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -7,7 +8,7 @@ from scipy.optimize import fminbound
 from tqdm import tqdm
 
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.matching.utils import compute_obj_function, perm_indices_to_perm_matrix, weight_matching_gradient_fn
+from ccmm.matching.utils import PermutationIndices, perm_indices_to_perm_matrix
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
 from ccmm.utils.utils import ModelParams
 
@@ -33,22 +34,23 @@ def frank_wolfe_weight_matching(
     perm_sizes = {}
 
     # FOR MLP
-    # ps.perm_to_axes["P_4"] = [("layer4.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    ps.perm_to_axes["P_final"] = [("linear.weight", 0)]
+    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
 
-    for perm_name, params_and_axes in ps.perm_to_axes.items():
+    for perm_name, params_and_axes in ps.perm_to_layers_and_axes.items():
         # params_and_axes is a list of tuples, e.g. [('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..]
         relevant_params, relevant_axis = params_and_axes[0]
         param_shape = params_a[relevant_params].shape
         perm_sizes[perm_name] = param_shape[relevant_axis]
 
-    # initialize with identity permutation if none given
-    all_perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()}
+    # initialize with identity permutation
+    all_perm_indices: Dict[str, PermutationIndices] = {p: torch.arange(n) for p, n in perm_sizes.items()}
+
     # e.g. P0, P1, ..
-    perm_names = list(all_perm_indices.keys())
-    num_perms = len(perm_names)
+    perm_ids = list(all_perm_indices.keys())
+    num_perms = len(perm_ids)
 
     old_obj = 0.0
     patience_steps = 0
@@ -61,11 +63,11 @@ def frank_wolfe_weight_matching(
         }
 
         perm_order = torch.arange(num_perms)
-        gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p])) for p in perm_names}
+        gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p])) for p in perm_ids}
 
         for p_ix in perm_order:
 
-            P_curr_name = perm_names[p_ix]
+            P_curr_name = perm_ids[p_ix]
             P_curr = perm_indices_to_perm_matrix(all_perm_indices[P_curr_name])
 
             weight_matching_gradient_fn(
@@ -73,9 +75,9 @@ def frank_wolfe_weight_matching(
                 params_b,
                 P_curr,
                 P_curr_name,
-                ps.perm_to_axes,
+                ps.perm_to_layers_and_axes,
                 not_visited_params,
-                perm_names,
+                perm_ids,
                 all_perm_indices,
                 gradients,
             )
@@ -87,7 +89,7 @@ def frank_wolfe_weight_matching(
 
         for p_ix in perm_order[:-1]:
 
-            P_curr_name = perm_names[p_ix]
+            P_curr_name = perm_ids[p_ix]
             P_curr = perm_indices_to_perm_matrix(all_perm_indices[P_curr_name])
 
             # (num_neurons, num_neurons)
@@ -100,9 +102,9 @@ def frank_wolfe_weight_matching(
                 compute_obj_function,
                 params_a=params_a,
                 params_b=params_b,
-                perm_to_axes=ps.perm_to_axes,
+                perm_to_axes=ps.perm_to_layers_and_axes,
                 P_curr_name=P_curr_name,
-                perm_names=perm_names,
+                perm_names=perm_ids,
                 all_perm_indices=all_perm_indices,
             )
 
@@ -138,11 +140,205 @@ def frank_wolfe_weight_matching(
 
 def line_search_step(t, P_curr, proj_grad, obj_func):
     p_curr_opt = (1 - t) * P_curr + t * proj_grad
-    # TODO: understand if the projection is necessary
-    # (in theory it shouldn't be, but then we have to permute stuff with a soft permutation)
-    p_curr_opt = perm_indices_to_perm_matrix(solve_linear_assignment_problem(p_curr_opt))
 
     local_obj = -obj_func(
         P_curr=p_curr_opt,
     )
     return local_obj
+
+
+def weight_matching_gradient_fn(
+    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_names, all_perm_indices, gradients
+):
+    """
+    Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
+    sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
+
+    Returns:
+        grad_P_curr: Gradient of objective function w.r.t. P_curr.
+        grad_P_prev: Gradient of objective function w.r.t. P_prev.
+    """
+
+    # all the params that are permuted by this permutation matrix, together with the axis on which it acts
+    # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
+    params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
+
+    P_prev_name = None
+
+    for params_name, axis in params_and_axes:
+
+        # axis != 0 will be considered when P_curr will be P_prev for some next layer
+        if axis == 0:
+
+            not_visited_params[params_name].remove(0)
+
+            Wa, Wb = params_a[params_name], params_b[params_name]
+            assert Wa.shape == Wa.shape
+
+            if Wa.dim() == 1:
+                Wa = Wa.unsqueeze(1)
+                Wb = Wb.unsqueeze(1)
+
+            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
+
+            grad_P_curr = compute_gradient_P_curr(Wa, Wb, P_prev)
+
+            grad_P_prev = compute_gradient_P_prev(Wa, Wb, P_curr)
+
+            gradients[P_curr_name] += grad_P_curr
+
+            if P_prev_name is not None:
+                not_visited_params[params_name].remove(1)
+                gradients[P_prev_name] += grad_P_prev
+
+
+def compute_obj_function(
+    params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_names, all_perm_indices, debug=True
+):
+    """
+    Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
+    sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
+
+    Returns:
+        grad_P_curr: Gradient of objective function w.r.t. P_curr.
+        grad_P_prev: Gradient of objective function w.r.t. P_prev.
+    """
+
+    # all the params that are permuted by this permutation matrix, together with the axis on which it acts
+    # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
+    params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
+
+    obj = 0.0
+
+    for params_name, axis in params_and_axes:
+
+        # axis != 0 will be considered when P_curr will be P_prev for some next layer
+        if axis == 0:
+
+            Wa, Wb = params_a[params_name], params_b[params_name]
+            assert Wa.shape == Wa.shape
+
+            # (P_i Wb_i) P_{i-1}^T
+
+            # (P_i Wb_i)
+            Wb_perm = perm_rows(perm=P_curr, x=Wb)
+            if len(Wb.shape) == 2 and debug:
+                assert torch.all(Wb_perm == P_curr @ Wb)
+
+            P_prev_name, P_prev = get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices)
+
+            if P_prev is not None:
+                # (P_i Wb_i) P_{i-1}^T
+                Wb_perm = perm_cols(x=Wb_perm, perm=P_prev.T)
+
+                if len(Wb.shape) == 2 and debug:
+                    assert torch.all(Wb_perm == P_curr @ Wb @ P_prev.T)
+
+            if len(Wa.shape) == 1:
+                # vector case, result is the dot product of the vectors A^T B
+                obj += Wa.T @ Wb_perm
+            elif len(Wa.shape) == 2:
+                # matrix case, result is the trace of the matrix product A^T B
+                obj += torch.trace(Wa.T @ Wb_perm).numpy()
+            elif len(Wa.shape) == 3:
+                # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
+                obj += torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+            else:
+                obj += torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+
+    return obj
+
+
+def compute_gradient_P_curr(Wa, Wb, P_prev):
+    """
+    (A P_{l-1} B^T)
+    """
+
+    if P_prev is None:
+        P_prev = torch.eye(Wb.shape[1])
+
+    assert Wa.shape == Wb.shape
+    assert P_prev.shape[0] == Wb.shape[1]
+
+    # P_{l-1} B^T
+    Wb_perm = perm_rows(x=Wb.transpose(1, 0), perm=P_prev)
+    if len(Wb.shape) == 2:
+        assert torch.all(Wb_perm == P_prev @ Wb.T)
+
+    if len(Wa.shape) == 2:
+        grad_P_curr = Wa @ Wb_perm
+    elif len(Wa.shape) == 3:
+        grad_P_curr = torch.einsum("ijk,jnk->in", Wa, Wb_perm)
+    else:
+        grad_P_curr = torch.einsum("ijkm,jnkm->in", Wa, Wb_perm)
+
+    return grad_P_curr
+
+
+def compute_gradient_P_prev(Wa, Wb, P_curr):
+    """
+    (A^T P_l B)
+
+    """
+    assert P_curr.shape[0] == Wb.shape[0]
+
+    grad_P_prev = None
+
+    # (P_l B)
+    Wb_perm = perm_rows(perm=P_curr, x=Wb)
+    if len(Wb.shape) == 2:
+        assert torch.all(Wb_perm == P_curr @ Wb)
+
+    if len(Wa.shape) == 2:
+        grad_P_prev = Wa.T @ Wb_perm
+    elif len(Wa.shape) == 3:
+        grad_P_prev = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)
+    else:
+        grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
+
+    return grad_P_prev
+
+
+def get_prev_permutation(perm_names, params_name, perm_to_axes, all_perm_indices):
+    P_prev_name, P_prev = None, None
+    for other_p in perm_names:
+
+        # all the layers that are column-permuted by other_p
+        params_perm_by_other_p = [tup[0] if tup[1] == 1 else None for tup in perm_to_axes[other_p]]
+        if params_name in params_perm_by_other_p:
+            P_prev_name = other_p
+            P_prev = perm_indices_to_perm_matrix(all_perm_indices[P_prev_name])
+
+    return P_prev_name, P_prev
+
+
+def perm_rows(x, perm):
+    """
+    X ~ (n, d0) or (n, d0, d1) or (n, d0, d1, d2)
+    perm ~ (n, n)
+    """
+    assert x.shape[0] == perm.shape[0]
+    assert perm.shape[0] == perm.shape[1]
+
+    input_dims = "jklm"[: x.dim()]
+    output_dims = "iklm"[: x.dim()]
+
+    ein_string = f"ij,{input_dims}->{output_dims}"
+
+    return torch.einsum(ein_string, perm, x)
+
+
+def perm_cols(x, perm):
+    """
+    X ~ (d0, n) or (d0, d1, n) or (d0, d1, d2, n)
+    perm ~ (n, n)
+    """
+    assert x.shape[1] == perm.shape[0]
+    assert perm.shape[0] == perm.shape[1]
+
+    x = x.transpose(1, 0)
+    perm = perm.transpose(1, 0)
+
+    permuted_x = perm_rows(x=x, perm=perm)
+
+    return permuted_x.transpose(1, 0)

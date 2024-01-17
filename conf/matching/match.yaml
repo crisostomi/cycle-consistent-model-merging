@@ -12,8 +12,8 @@ trainer:
   precision: 32
 
 model_seeds:
+  - 1
   - 2
-  - 3
   # - 3
   # - 4
   # - 5

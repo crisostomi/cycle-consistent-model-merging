@@ -66,6 +66,7 @@ def run(cfg: DictConfig) -> str:
     pylogger.info("Starting training!")
     trainer.fit(model=model, datamodule=datamodule, ckpt_path=template_core.trainer_ckpt_path)
 
+    # TODO: save the models as relative paths and not absolute ones
     best_model_path = get_checkpoint_callback(callbacks).best_model_path
 
     best_model_info = {

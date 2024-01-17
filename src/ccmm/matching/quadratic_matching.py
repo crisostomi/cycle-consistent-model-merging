@@ -46,7 +46,7 @@ def quadratic_weight_matching(
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
     perm_sizes = {
         p: params_a[params_and_axes[0][0]].shape[params_and_axes[0][1]]
-        for p, params_and_axes in ps.perm_to_axes.items()
+        for p, params_and_axes in ps.perm_to_layers_and_axes.items()
     }
 
     # initialize with identity permutation if none given
@@ -68,7 +68,7 @@ def quadratic_weight_matching(
 
             # all the params that are permuted by this permutation matrix, together with the axis on which it acts
             # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
-            params_and_axes: List[Tuple[str, int]] = ps.perm_to_axes[p]
+            params_and_axes: List[Tuple[str, int]] = ps.perm_to_layers_and_axes[p]
 
             for params_name, axis in params_and_axes:
                 w_a = params_a[params_name]
@@ -76,7 +76,7 @@ def quadratic_weight_matching(
 
                 assert w_a.shape == w_b.shape
 
-                perms_to_apply = ps.axes_to_perm[params_name]
+                perms_to_apply = ps.layer_and_axes_to_perm[params_name]
 
                 w_b = get_permuted_param(w_b, perms_to_apply, all_perm_indices, except_axis=axis)
 

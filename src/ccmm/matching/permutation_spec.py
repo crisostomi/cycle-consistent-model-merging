@@ -48,8 +48,11 @@ def shortcut_block_axes(name, p_in, p_out):
 
 
 class PermutationSpec(NamedTuple):
-    perm_to_axes: dict
-    axes_to_perm: dict
+    # maps permutation matrices to the layers they permute, expliciting the axis they act on
+    perm_to_layers_and_axes: dict
+
+    # maps layers to permutations: if a layer has k dimensions, it maps to a permutation matrix (or None) for each dimension
+    layer_and_axes_to_perm: dict
 
 
 class PermutationSpecBuilder:
@@ -67,7 +70,7 @@ class PermutationSpecBuilder:
                 if perm is not None:
                     perm_to_axes[perm].append((wk, axis))
 
-        return PermutationSpec(perm_to_axes=dict(perm_to_axes), axes_to_perm=axes_to_perm)
+        return PermutationSpec(perm_to_layers_and_axes=dict(perm_to_axes), layer_and_axes_to_perm=axes_to_perm)
 
 
 class MLPPermutationSpecBuilder(PermutationSpecBuilder):

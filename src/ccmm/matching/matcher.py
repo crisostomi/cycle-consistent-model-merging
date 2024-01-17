@@ -23,7 +23,7 @@ class DummyMatcher(Matcher):
     def __call__(self, fixed, permutee):
         perm_sizes = {
             p: fixed[params_and_axes[0][0]].shape[params_and_axes[0][1]]
-            for p, params_and_axes in self.permutation_spec.perm_to_axes.items()
+            for p, params_and_axes in self.permutation_spec.perm_to_layers_and_axes.items()
         }
 
         permutation_indices = {p: torch.arange(n) for p, n in perm_sizes.items()}
