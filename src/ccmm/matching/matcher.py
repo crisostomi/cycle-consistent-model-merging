@@ -52,7 +52,7 @@ class GitRebasinMatcher(Matcher):
             layer_iteration_order=self.layer_iteration_order,
         )
 
-        return permutation_indices
+        return permutation_indices, None
 
 
 class QuadraticMatcher(Matcher):
@@ -111,13 +111,33 @@ class SynchronizedMatcher(Matcher):
 
 
 class FrankWolfeMatcher(Matcher):
-    def __init__(self, name, permutation_spec: PermutationSpec, max_iter=100):
+    def __init__(
+        self,
+        name,
+        permutation_spec: PermutationSpec,
+        initialization_method,
+        num_trials,
+        max_iter=100,
+        return_perm_history=False,
+    ):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
+        self.return_perm_history = return_perm_history
+        self.initialization_method = initialization_method
+        self.num_trials = num_trials
 
     def __call__(self, fixed, permutee):
-        permutation_indices = frank_wolfe_weight_matching(
-            ps=self.permutation_spec, fixed=fixed, permutee=permutee, max_iter=self.max_iter
+        permutation_indices, perm_history = frank_wolfe_weight_matching(
+            ps=self.permutation_spec,
+            fixed=fixed,
+            permutee=permutee,
+            max_iter=self.max_iter,
+            num_trials=self.num_trials,
+            return_perm_history=self.return_perm_history,
+            initialization_method=self.initialization_method,
         )
 
-        return permutation_indices
+        if self.return_perm_history:
+            return permutation_indices, perm_history
+        else:
+            return permutation_indices

@@ -12,13 +12,13 @@ trainer:
   precision: 32
 
 model_seeds:
+  - 1
   - 2
-  - 3
   # - 3
   # - 4
   # - 5
 
-num_interpolation_steps: 3
+num_interpolation_steps: 25
 
 batch_size: 5000
 num_workers: 14
@@ -27,3 +27,4 @@ model_info_path: ${matching.output_path}/${dataset.name}/${model.model_identifie
 
 permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset.name}/${matching.matcher.name}/}
 results_path: ${path:${oc.env:PROJECT_ROOT}/results/${dataset.name}/${matching.matcher.name}/}
+plot_perm_history: False

@@ -116,7 +116,11 @@ def evaluate_pair_of_models(
     metrics = ["acc", "loss"]
     for step, lambd in enumerate(lambdas):
         for metric in metrics:
-            logger.experiment.log({f"{metric}": results[f"test_{metric}"][step]}, step=step)
+            logger.experiment.log({f"{metric}/test": results[f"test_{metric}"][step]}, step=step)
+            logger.experiment.log({f"{metric}/train": results[f"train_{metric}"][step]}, step=step)
+
+    for mode in ["train", "test"]:
+        logger.experiment.log({f"loss_barrier/{mode}": results[f"{mode}_loss_barrier"]})
 
 
 def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):
@@ -148,7 +152,25 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
         results["test_acc"].append(test_results[0]["acc/test"])
         results["test_loss"].append(test_results[0]["loss/test"])
 
+    train_loss_barrier = compute_loss_barrier(results["train_loss"])
+    test_loss_barrier = compute_loss_barrier(results["test_loss"])
+
+    results["train_loss_barrier"] = train_loss_barrier
+    results["test_loss_barrier"] = test_loss_barrier
+
     return results
+
+
+def compute_loss_barrier(losses):
+    """
+    max_{lambda in [0,1]} loss(alpha * model_a + (1 - alpha) * model_b) - 0.5 * (loss(model_a) + loss(model_b))
+    """
+    model_a_loss = losses[0]
+    model_b_loss = losses[-1]
+
+    avg_loss = (model_a_loss + model_b_loss) / 2
+
+    return max(losses) - avg_loss
 
 
 @hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")

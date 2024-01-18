@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
+from pytorch_lightning import seed_everything
 from scipy.optimize import fminbound
 from tqdm import tqdm
 
@@ -19,7 +20,10 @@ def frank_wolfe_weight_matching(
     ps: PermutationSpec,
     fixed: ModelParams,
     permutee: ModelParams,
+    initialization_method: str,
     max_iter=100,
+    return_perm_history=False,
+    num_trials=3,
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -34,10 +38,10 @@ def frank_wolfe_weight_matching(
     perm_sizes = {}
 
     # FOR MLP
-    ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
 
     for perm_name, params_and_axes in ps.perm_to_layers_and_axes.items():
         # params_and_axes is a list of tuples, e.g. [('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..]
@@ -45,24 +49,44 @@ def frank_wolfe_weight_matching(
         param_shape = params_a[relevant_params].shape
         perm_sizes[perm_name] = param_shape[relevant_axis]
 
-    # initialize with identity permutation
-    all_perm_indices: Dict[str, PermutationIndices] = {p: torch.arange(n) for p, n in perm_sizes.items()}
-    perm_matrices: Dict[str, PermutationMatrix] = {p: torch.eye(n) for p, n in perm_sizes.items()}
+    seeds = np.random.randint(0, 1000, num_trials)
+    best_obj = 0.0
+
+    for seed in tqdm(seeds, desc="Running multiple trials"):
+        seed_everything(seed)
+
+        perm_matrices, perm_matrices_history, trial_obj = frank_wolfe_weight_matching_trial(
+            params_a, params_b, perm_sizes, initialization_method, ps, max_iter
+        )
+        pylogger.info(f"Trial objective: {trial_obj}")
+
+        if trial_obj > best_obj:
+            pylogger.info(f"New best objective! Previous was {best_obj}")
+            best_obj = trial_obj
+            best_perm_matrices = perm_matrices
+            best_perm_matrices_history = perm_matrices_history
+
+    all_perm_indices = {p: solve_linear_assignment_problem(perm) for p, perm in best_perm_matrices.items()}
+
+    if return_perm_history:
+        return all_perm_indices, best_perm_matrices_history
+    else:
+        return all_perm_indices
+
+
+def frank_wolfe_weight_matching_trial(params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100):
+
+    perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(perm_sizes, initialization_method)
+    perm_matrices_history = [perm_matrices]
 
     old_obj = 0.0
     patience_steps = 0
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
-        pylogger.info(f"Iteration {iteration}")
-
-        # keep track if the params have been permuted in both axis 0 and 1
-        # not_visited_params = {
-        #     param_name: {0, 1} if ("bias" not in param_name and "bn" not in param_name) else {0}
-        #     for param_name in set(params_a.keys())
-        # }
+        pylogger.debug(f"Iteration {iteration}")
 
         gradients = weight_matching_gradient_fn_layerwise(
-            params_a, params_b, perm_matrices, ps.layer_and_axes_to_perm, perm_sizes
+            params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm, perm_sizes
         )
 
         proj_grads = project_gradients(gradients)
@@ -73,17 +97,17 @@ def frank_wolfe_weight_matching(
             perm_matrices=perm_matrices,
             params_a=params_a,
             params_b=params_b,
-            layers_and_axes_to_perms=ps.layer_and_axes_to_perm,
+            layers_and_axes_to_perms=perm_spec.layer_and_axes_to_perm,
         )
 
         step_size = fminbound(line_search_step_func, 0, 1)
-        pylogger.info(f"Step size: {step_size}")
+        pylogger.debug(f"Step size: {step_size}")
 
         perm_matrices = update_perm_matrices(perm_matrices, proj_grads, step_size)
 
-        new_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, ps.layer_and_axes_to_perm)
+        new_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm)
 
-        pylogger.info(f"Objective: {np.round(new_obj, 6)}")
+        pylogger.debug(f"Objective: {np.round(new_obj, 6)}")
 
         if (new_obj - old_obj) < 1e-6:
             patience_steps += 1
@@ -94,9 +118,20 @@ def frank_wolfe_weight_matching(
         if patience_steps >= 15:
             break
 
-    all_perm_indices = {p: solve_linear_assignment_problem(perm) for p, perm in perm_matrices.items()}
+        perm_matrices_history.append(perm_matrices)
 
-    return all_perm_indices
+    return perm_matrices, perm_matrices_history, new_obj
+
+
+def initialize_perm_matrices(perm_sizes, initialization_method):
+    if initialization_method == "identity":
+        return {p: torch.eye(n) for p, n in perm_sizes.items()}
+    elif initialization_method == "random":
+        return {p: torch.rand(n, n) for p, n in perm_sizes.items()}
+    elif initialization_method == "sinkhorn":
+        return {p: sinkhorn_knopp(torch.rand(n, n)) for p, n in perm_sizes.items()}
+    else:
+        raise ValueError(f"Unknown initialization method {initialization_method}")
 
 
 def project_gradients(gradients):
@@ -203,9 +238,7 @@ def weight_matching_gradient_fn_layerwise(params_a, params_b, perm_matrices, lay
     return gradients
 
 
-def weight_matching_gradient_fn(
-    params_a, params_b, P_curr, P_curr_name, perm_to_axes, not_visited_params, perm_matrices, gradients
-):
+def weight_matching_gradient_fn(params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_matrices, gradients):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -236,7 +269,6 @@ def weight_matching_gradient_fn(
             P_prev_name, P_prev = get_prev_permutation(params_name, perm_to_axes, perm_matrices)
 
             if not is_last_layer(params_and_axes):
-                not_visited_params[params_name].remove(0)
 
                 grad_P_curr = compute_gradient_P_curr(Wa, Wb, P_prev)
 
@@ -245,7 +277,6 @@ def weight_matching_gradient_fn(
             if P_prev_name is not None:
                 grad_P_prev = compute_gradient_P_prev(Wa, Wb, P_curr)
 
-                not_visited_params[params_name].remove(1)
                 gradients[P_prev_name] += grad_P_prev
 
 
@@ -328,7 +359,7 @@ def compute_gradient_P_curr(Wa, Wb, P_prev):
     # P_{l-1} B^T
     Wb_perm = perm_rows(x=Wb.transpose(1, 0), perm=P_prev)
     if len(Wb.shape) == 2:
-        assert torch.all(Wb_perm == P_prev @ Wb.T)
+        assert torch.allclose(Wb_perm, P_prev @ Wb.T, atol=1e-6)
 
     if len(Wa.shape) == 2:
         grad_P_curr = Wa @ Wb_perm
@@ -425,3 +456,46 @@ def update_perm_matrices(perm_matrices, proj_grads, step_size):
         new_perm_matrices[perm_name] = new_P_curr_interp
 
     return new_perm_matrices
+
+
+def sinkhorn_knopp(matrix, tol=1e-10, max_iterations=1000):
+    """
+    Applies the Sinkhorn-Knopp algorithm to make a non-negative matrix doubly stochastic.
+
+    Parameters:
+    matrix (2D torch tensor): A non-negative matrix.
+    tol (float): Tolerance for the stopping condition.
+    max_iterations (int): Maximum number of iterations.
+
+    Returns:
+    2D torch tensor: Doubly stochastic matrix.
+    """
+    if not torch.all(matrix >= 0):
+        raise ValueError("Matrix contains negative values.")
+
+    R, C = matrix.size()
+
+    if R != C:
+        raise ValueError("Matrix must be square.")
+
+    # Normalize the matrix so that all elements sum to 1
+    matrix = matrix / (matrix.sum() + 1e-16)
+
+    # Initialize row and column scaling factors
+    row_scale = torch.ones(R)
+    col_scale = torch.ones(C)
+
+    for _ in range(max_iterations):
+        # Scale rows
+        row_scale = 1 / (torch.mv(matrix, col_scale) + 1e-16)
+        matrix = torch.diag(row_scale).mm(matrix)
+
+        # Scale columns
+        col_scale = 1 / (torch.mv(matrix.t(), row_scale) + 1e-16)
+        matrix = matrix.mm(torch.diag(col_scale))
+
+        # Check if matrix is close enough to doubly stochastic
+        if torch.all(torch.abs(matrix.sum(dim=0) - 1) < tol) and torch.all(torch.abs(matrix.sum(dim=1) - 1) < tol):
+            return matrix
+
+    return matrix

@@ -3,7 +3,9 @@ import itertools
 import logging
 from typing import Dict, List, Set, Tuple
 
+import matplotlib.pyplot as plt
 import torch
+from matplotlib.animation import FuncAnimation
 from pytorch_lightning import LightningModule
 from torch import Tensor
 
@@ -160,6 +162,21 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
         permuted_params[param_name] = param
 
     return permuted_params
+
+
+def plot_permutation_history_animation(perm_history, cfg):
+    def update(frame, ax, perm_history, perm_index):
+        perm = perm_history[frame][perm_index].numpy()
+        ax.imshow(perm, cmap="gray")
+
+    for perm_index in perm_history[0].keys():
+        fig, ax = plt.subplots(figsize=(15, 15), dpi=100)
+        ani = FuncAnimation(fig, update, fargs=(ax, perm_history, perm_index), frames=len(perm_history), interval=500)
+
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, hspace=0.3)
+        animation_path = cfg.permutations_path / f"animation_{perm_index}.mp4"
+        ani.save(animation_path)
+        plt.close(fig)
 
 
 # def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):

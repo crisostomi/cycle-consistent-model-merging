@@ -25,7 +25,6 @@ module:
 
   model:
     _target_: ccmm.models.mlp.MLP # ccmm.models.cnn.CNN
-    input: 784 # 784 for MNIST, 3072 for CIFAR10
 
   optimizer:
     _target_: torch.optim.Adam

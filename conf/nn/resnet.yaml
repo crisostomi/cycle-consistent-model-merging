@@ -1,14 +1,11 @@
-defaults:
-  - dataset: cifar10
 
 data_path: ${oc.env:PROJECT_ROOT}/data
 output_path: ${oc.env:PROJECT_ROOT}/output
-dataset_name: CIFAR10
 
 data:
   _target_: ccmm.data.datamodule.MyDataModule
 
-  dataset: ${nn.dataset}
+  dataset: ${dataset}
 
   gpus: ${train.trainer.gpus}
 
@@ -30,7 +27,7 @@ module:
     _target_: ccmm.models.resnet.ResNet
     depth: 22 # 22 or 50
     num_classes: 10
-    widen_factor: 16 # 2, 32 by git re-basin
+    widen_factor: 8 # 2, 4, 16, 32 by git re-basin
 
   optimizer:
     _target_: torch.optim.SGD

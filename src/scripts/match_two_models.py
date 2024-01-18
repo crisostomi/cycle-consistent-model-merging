@@ -12,7 +12,7 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 
 import ccmm  # noqa
-from ccmm.matching.utils import get_inverse_permutations
+from ccmm.matching.utils import get_inverse_permutations, plot_permutation_history_animation
 from ccmm.utils.utils import flatten_params, load_model_from_info, map_model_seed_to_symbol, save_permutations
 
 pylogger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def run(cfg: DictConfig) -> str:
     permutations = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
     matcher = instantiate(cfg.matcher, permutation_spec=permutation_spec)
-    permutations[fixed_symbol][permutee_symbol] = matcher(
+    permutations[fixed_symbol][permutee_symbol], perm_history = matcher(
         fixed=flatten_params(fixed_model.model), permutee=flatten_params(permutee_model.model)
     )
 
@@ -58,6 +58,9 @@ def run(cfg: DictConfig) -> str:
         torch.save(model.model.state_dict(), cfg.permutations_path / f"model_{symbol}.pt")
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
+
+    if cfg.plot_perm_history:
+        plot_permutation_history_animation(perm_history, cfg)
 
 
 @hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")

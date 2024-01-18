@@ -1,4 +1,3 @@
-import ast
 import logging
 from pathlib import Path
 
@@ -29,8 +28,8 @@ def decode_path(path):
 OmegaConf.register_new_resolver("path", lambda path: decode_path(path))
 
 
-def enum_resolver(enum_class: str, enum_member: str):
-    enum_class = ast.literal_eval(enum_class)
+def enum_resolver(enum_class: str, enum_member: str):  # NOQA
+    enum_class = eval(enum_class)  # NOQA
     return enum_class[enum_member]
 
 
