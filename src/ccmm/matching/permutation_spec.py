@@ -5,11 +5,11 @@ from typing import NamedTuple
 pylogger = logging.getLogger(__name__)
 
 
-def conv_axes(name, p_in, p_out):
+def conv_axes(name, p_rows, p_cols):
     return {
         f"{name}.weight": (
-            p_out,
-            p_in,
+            p_rows,
+            p_cols,
             None,
             None,
         )
@@ -20,30 +20,29 @@ def norm_layer_axes(name, p):
     return {f"{name}.weight": (p,), f"{name}.bias": (p,)}
 
 
-def dense_layer_axes(name, p_in, p_out, bias=True):
-    # it's (p_in , p_out) in git-rebasin (due to jax)
-    return {f"{name}.weight": (p_out, p_in), f"{name}.bias": (p_out,)}
+def dense_layer_axes(name, p_rows, p_cols, bias=True):
+    return {f"{name}.weight": (p_rows, p_cols), f"{name}.bias": (p_rows,)}
 
 
 def easyblock_axes(name, p):
     """Easy blocks that use a residual connection, without any change in the number of channels."""
     return {
-        **conv_axes(f"{name}.conv1", p, f"P_{name}_inner"),
-        **norm_layer_axes(f"{name}.bn1", p),
-        **conv_axes(f"{name}.conv2", f"P_{name}_inner", p),
-        **norm_layer_axes(f"{name}.bn2", p),
+        **conv_axes(f"{name}.conv1", p_rows=f"P_{name}_inner", p_cols=p),
+        **norm_layer_axes(f"{name}.bn1.layer_norm", f"P_{name}_inner"),
+        **conv_axes(f"{name}.conv2", p_rows=p, p_cols=f"P_{name}_inner"),
+        **norm_layer_axes(f"{name}.bn2.layer_norm", p),
     }
 
 
-def shortcut_block_axes(name, p_in, p_out):
+def shortcut_block_axes(name, p_rows, p_cols):
     """This is for blocks that use a residual connection, but change the number of channels via a Conv."""
     return {
-        **conv_axes(f"{name}.conv1", p_in, f"P_{name}_inner"),
-        **norm_layer_axes(f"{name}.bn1", f"P_{name}_inner"),
-        **conv_axes(f"{name}.conv2", f"P_{name}_inner", p_out),
-        **norm_layer_axes(f"{name}.bn2", p_out),
-        **conv_axes(f"{name}.shortcut.0", p_in, p_out),
-        **norm_layer_axes(f"{name}.shortcut.1", p_out),
+        **conv_axes(f"{name}.conv1", p_rows=f"P_{name}_inner", p_cols=p_cols),
+        **norm_layer_axes(f"{name}.bn1.layer_norm", f"P_{name}_inner"),
+        **conv_axes(f"{name}.conv2", p_rows=p_rows, p_cols=f"P_{name}_inner"),
+        **norm_layer_axes(f"{name}.bn2.layer_norm", p_rows),
+        **conv_axes(f"{name}.shortcut.0", p_rows=p_rows, p_cols=p_cols),
+        **norm_layer_axes(f"{name}.shortcut.1.layer_norm", p_rows),
     }
 
 
@@ -98,34 +97,37 @@ class ResNet20PermutationSpecBuilder(PermutationSpecBuilder):
 
     def create_permutation(self) -> PermutationSpec:
         axes_to_perm = {
-            # initial conv
-            **conv_axes("conv1", None, "P_bg0"),
+            # initial conv, only permute its rows as the columns are the input channels
+            **conv_axes("conv1", p_rows="P_bg0", p_cols=None),
             # batch norm after initial conv
-            **norm_layer_axes("bn1", "P_bg0"),
+            **norm_layer_axes("bn1.layer_norm", p="P_bg0"),
+            ##########
             # layer 1
-            **shortcut_block_axes("layer1.0", "P_bg0", "P_bg1"),
+            **easyblock_axes("layer1.0", p="P_bg0"),
             **easyblock_axes(
                 "layer1.1",
-                "P_bg1",
+                p="P_bg0",
             ),
-            **easyblock_axes("layer1.2", "P_bg1"),
+            **easyblock_axes("layer1.2", p="P_bg0"),
+            ##########
             # layer 2
-            **shortcut_block_axes("layer2.0", "P_bg1", "P_bg2"),
+            **shortcut_block_axes("layer2.0", p_rows="P_bg1", p_cols="P_bg0"),
             **easyblock_axes(
                 "layer2.1",
-                "P_bg2",
+                p="P_bg1",
             ),
-            **easyblock_axes("layer2.2", "P_bg2"),
+            **easyblock_axes("layer2.2", p="P_bg1"),
+            ##########
             # layer 3
-            **shortcut_block_axes("layer3.0", "P_bg2", "P_bg3"),
+            **shortcut_block_axes("layer3.0", p_rows="P_bg2", p_cols="P_bg1"),
             **easyblock_axes(
                 "layer3.1",
-                "P_bg3",
+                p="P_bg2",
             ),
-            **easyblock_axes("layer3.2", "P_bg3"),
-            **norm_layer_axes("out_bn", "P_bg3"),
-            # output layer
-            **dense_layer_axes("linear", "P_bg3", None),
+            **easyblock_axes("layer3.2", p="P_bg2"),
+            ###########
+            # output layer, only permute its columns as the rows are the output channels
+            **dense_layer_axes("linear", p_rows=None, p_cols="P_bg2"),
         }
 
         return self.permutation_spec_from_axes_to_perm(axes_to_perm)
@@ -140,9 +142,9 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
 
         return self.permutation_spec_from_axes_to_perm(
             {
-                **conv_axes("conv1", None, "P_bg0"),
+                **conv_axes("conv1", p_rows="P_bg0", p_cols=None),
                 **norm_layer_axes("bn1", "P_bg0"),
-                **shortcut_block_axes("layer1.0", "P_bg0", "P_bg1"),
+                **shortcut_block_axes("layer1.0", "P_bg1", "P_bg0"),
                 **easyblock_axes(
                     "layer1.1",
                     "P_bg1",
@@ -153,7 +155,7 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
                 **easyblock_axes("layer1.5", "P_bg1"),
                 **easyblock_axes("layer1.6", "P_bg1"),
                 **easyblock_axes("layer1.7", "P_bg1"),
-                **shortcut_block_axes("layer2.0", "P_bg1", "P_bg2"),
+                **shortcut_block_axes("layer2.0", "P_bg2", "P_bg1"),
                 **easyblock_axes(
                     "layer2.1",
                     "P_bg2",
@@ -164,7 +166,7 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
                 **easyblock_axes("layer2.5", "P_bg2"),
                 **easyblock_axes("layer2.6", "P_bg2"),
                 **easyblock_axes("layer2.7", "P_bg2"),
-                **shortcut_block_axes("layer3.0", "P_bg2", "P_bg3"),
+                **shortcut_block_axes("layer3.0", "P_bg3", "P_bg2"),
                 **easyblock_axes(
                     "layer3.1",
                     "P_bg3",
@@ -176,7 +178,7 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
                 **easyblock_axes("layer3.6", "P_bg3"),
                 **easyblock_axes("layer3.7", "P_bg3"),
                 **norm_layer_axes("out_bn", "P_bg3"),
-                **dense_layer_axes("linear", "P_bg3", None),
+                **dense_layer_axes("linear", p_rows=None, p_cols="P_bg3"),
             }
         )
 
@@ -226,6 +228,6 @@ class VGG16PermutationSpecBuilder(PermutationSpecBuilder):
                     for i in range(len(layers_with_bn))
                 },
                 **{f"features.{layers_with_bn[i]}.num_batches_tracked": () for i in range(len(layers_with_bn))},
-                **dense_layer_axes("classifier", "P_Conv_40", "P_Dense_0", False),
+                **dense_layer_axes("classifier", p_rows="P_Dense_0", p_cols="P_Conv_40", bias=False),
             }
         )

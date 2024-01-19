@@ -107,6 +107,7 @@ def evaluate_pair_of_models(
 ):
     fixed_model = models[fixed_id]
     permutee_model = models[permutee_id]
+
     permutee_model.model.load_state_dict(updated_params[fixed_id][permutee_id])
 
     results = evaluate_interpolated_models(
@@ -139,6 +140,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     trainer = instantiate(cfg.trainer)
 
     for lam in tqdm(lambdas):
+
         interpolated_params = linear_interpolation(lam, fixed_dict, permutee_dict)
         permutee.model.load_state_dict(interpolated_params)
 

@@ -15,7 +15,7 @@ data:
     test: 4
 
   batch_size:
-    train: 256
+    train: 100 #256 (it's 100 in git-rebasin)
     val: 128
     test: 128
 
@@ -27,21 +27,14 @@ module:
     _target_: ccmm.models.resnet.ResNet
     depth: 22 # 22 or 50
     num_classes: 10
-    widen_factor: 8 # 2, 4, 16, 32 by git re-basin
+    widen_factor: 2 # 2, 4, 16, 32 by git re-basin
 
   optimizer:
     _target_: torch.optim.SGD
     lr: 0.1
     momentum: 0.9
-    weight_decay: 0.0005
+    weight_decay: 1e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
 
-  # lr_scheduler:
-  #   _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
-  #   T_0: 10
-  #   T_mult: 2
-  #   eta_min: 0 # min value for the lr
-  #   last_epoch: -1
-  #   verbose: False
 
   lr_scheduler:
     _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
@@ -50,3 +43,11 @@ module:
     warmup_start_lr: 1e-6
     eta_min: 0.0
     last_epoch: -1
+
+  # lr_scheduler:
+  #   _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+  #   T_0: 10
+  #   T_mult: 2
+  #   eta_min: 0 # min value for the lr
+  #   last_epoch: -1
+  #   verbose: False

@@ -85,7 +85,59 @@ def frank_wolfe_weight_matching_trial(params_a, params_b, perm_sizes, initializa
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
         pylogger.debug(f"Iteration {iteration}")
 
-        gradients = weight_matching_gradient_fn_layerwise(
+        gradients = weight_matching_gradient_fn(
+            params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm, perm_sizes
+        )
+
+        proj_grads = project_gradients(gradients)
+
+        line_search_step_func = partial(
+            line_search_step,
+            proj_grads=proj_grads,
+            perm_matrices=perm_matrices,
+            params_a=params_a,
+            params_b=params_b,
+            layers_and_axes_to_perms=perm_spec.layer_and_axes_to_perm,
+        )
+
+        step_size = fminbound(line_search_step_func, 0, 1)
+        pylogger.debug(f"Step size: {step_size}")
+
+        perm_matrices = update_perm_matrices(perm_matrices, proj_grads, step_size)
+
+        new_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm)
+
+        pylogger.debug(f"Objective: {np.round(new_obj, 6)}")
+
+        if (new_obj - old_obj) < 1e-6:
+            patience_steps += 1
+        else:
+            patience_steps = 0
+            old_obj = new_obj
+
+        if patience_steps >= 15:
+            break
+
+        perm_matrices_history.append(perm_matrices)
+
+    return perm_matrices, perm_matrices_history, new_obj
+
+
+# TODO:
+def projected_grad_descent_weight_matching_trial(
+    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100
+):
+    pass  # TODO
+    perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(perm_sizes, initialization_method)
+    perm_matrices_history = [perm_matrices]
+
+    old_obj = 0.0
+    patience_steps = 0
+
+    for iteration in tqdm(range(max_iter), desc="Weight matching"):
+        pylogger.debug(f"Iteration {iteration}")
+
+        gradients = weight_matching_gradient_fn(
             params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm, perm_sizes
         )
 
@@ -181,8 +233,8 @@ def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_
 
         Wa, Wb = params_a[layer], params_b[layer]
         if Wa.dim() == 1:
-            Wa = Wa.unsqueeze(1)
-            Wb = Wb.unsqueeze(1)
+            Wa = Wa.unsqueeze(1)  # / torch.norm(Wa)
+            Wb = Wb.unsqueeze(1)  # / torch.norm(Wb)
 
         row_perm_id = axes_and_perms[0]
         assert row_perm_id is None or row_perm_id in perm_matrices.keys()
@@ -199,7 +251,7 @@ def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_
     return tot_obj
 
 
-def weight_matching_gradient_fn_layerwise(params_a, params_b, perm_matrices, layers_and_axes_to_perms, perm_sizes):
+def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_axes_to_perms, perm_sizes):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -216,13 +268,15 @@ def weight_matching_gradient_fn_layerwise(params_a, params_b, perm_matrices, lay
 
         Wa, Wb = params_a[layer], params_b[layer]
         if Wa.dim() == 1:
-            Wa = Wa.unsqueeze(1)
-            Wb = Wb.unsqueeze(1)
+            Wa = Wa.unsqueeze(1)  # / torch.norm(Wa)
+            Wb = Wb.unsqueeze(1)  # / torch.norm(Wb)
 
+        # any permutation acting on the first axis is permuting rows
         row_perm_id = axes_and_perms[0]
         assert row_perm_id is None or row_perm_id in perm_matrices.keys()
         row_perm = perm_matrices[row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0])
 
+        # any permutation acting on the second axis is permuting columns
         col_perm_id = axes_and_perms[1] if len(axes_and_perms) > 1 else None
         assert col_perm_id is None or col_perm_id in perm_matrices.keys()
         col_perm = perm_matrices[col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1])
@@ -238,46 +292,46 @@ def weight_matching_gradient_fn_layerwise(params_a, params_b, perm_matrices, lay
     return gradients
 
 
-def weight_matching_gradient_fn(params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_matrices, gradients):
-    """
-    Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
-    sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
+# def weight_matching_gradient_fn(params_a, params_b, P_curr, P_curr_name, perm_to_axes, perm_matrices, gradients):
+#     """
+#     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
+#     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
 
-    Returns:
-        grad_P_curr: Gradient of objective function w.r.t. P_curr.
-        grad_P_prev: Gradient of objective function w.r.t. P_prev.
-    """
+#     Returns:
+#         grad_P_curr: Gradient of objective function w.r.t. P_curr.
+#         grad_P_prev: Gradient of objective function w.r.t. P_prev.
+#     """
 
-    # all the params that are permuted by this permutation matrix, together with the axis on which it acts
-    # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
-    params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
+#     # all the params that are permuted by this permutation matrix, together with the axis on which it acts
+#     # e.g. ('layer_0.weight', 0), ('layer_0.bias', 0), ('layer_1.weight', 0)..
+#     params_and_axes: List[Tuple[str, int]] = perm_to_axes[P_curr_name]
 
-    P_prev_name = None
+#     P_prev_name = None
 
-    for params_name, axis in params_and_axes:
+#     for params_name, axis in params_and_axes:
 
-        # axis != 0 will be considered when P_curr will be P_prev for some next layer
-        if axis == 0:
+#         # axis != 0 will be considered when P_curr will be P_prev for some next layer
+#         if axis == 0:
 
-            Wa, Wb = params_a[params_name], params_b[params_name]
-            assert Wa.shape == Wa.shape
+#             Wa, Wb = params_a[params_name], params_b[params_name]
+#             assert Wa.shape == Wa.shape
 
-            if Wa.dim() == 1:
-                Wa = Wa.unsqueeze(1)
-                Wb = Wb.unsqueeze(1)
+#             if Wa.dim() == 1:
+#                 Wa = Wa.unsqueeze(1)
+#                 Wb = Wb.unsqueeze(1)
 
-            P_prev_name, P_prev = get_prev_permutation(params_name, perm_to_axes, perm_matrices)
+#             P_prev_name, P_prev = get_prev_permutation(params_name, perm_to_axes, perm_matrices)
 
-            if not is_last_layer(params_and_axes):
+#             if not is_last_layer(params_and_axes):
 
-                grad_P_curr = compute_gradient_P_curr(Wa, Wb, P_prev)
+#                 grad_P_curr = compute_gradient_P_curr(Wa, Wb, P_prev)
 
-                gradients[P_curr_name] += grad_P_curr
+#                 gradients[P_curr_name] += grad_P_curr
 
-            if P_prev_name is not None:
-                grad_P_prev = compute_gradient_P_prev(Wa, Wb, P_curr)
+#             if P_prev_name is not None:
+#                 grad_P_prev = compute_gradient_P_prev(Wa, Wb, P_curr)
 
-                gradients[P_prev_name] += grad_P_prev
+#                 gradients[P_prev_name] += grad_P_prev
 
 
 def is_last_layer(params_and_axes):

@@ -28,7 +28,7 @@ class DummyMatcher(Matcher):
 
         permutation_indices = {p: torch.arange(n) for p, n in perm_sizes.items()}
 
-        return permutation_indices
+        return permutation_indices, None
 
 
 class GitRebasinMatcher(Matcher):

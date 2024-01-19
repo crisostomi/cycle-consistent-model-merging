@@ -5,7 +5,7 @@ core:
   version: 0.0.1
   tags:
     - train
-    - resnet
+    - resnet_fixed_3
 
 defaults:
   - hydra: default

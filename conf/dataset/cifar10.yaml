@@ -18,9 +18,13 @@ test:
 train_transform:
   _target_: torchvision.transforms.Compose
   transforms:
-    - _target_: torchvision.transforms.RandomCrop
+    - _target_: torchvision.transforms.RandomResizedCrop
       size: 32
-      padding: 4
+      scale:
+        - 0.8
+        - 1.2
+    - _target_: torchvision.transforms.RandomRotation
+      degrees: 30
     - _target_: torchvision.transforms.RandomHorizontalFlip
     - _target_: torchvision.transforms.ToTensor
     - _target_: torchvision.transforms.Normalize

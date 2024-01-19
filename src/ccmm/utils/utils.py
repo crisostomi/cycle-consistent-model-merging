@@ -119,6 +119,8 @@ def plot_cumulative_density(neuron_dists, min_value, num_radii):
 
 
 def linear_interpolation(lam, t1, t2):
+    pylogger.info(f"Evaluating interpolated model with lambda: {lam}")
+
     t3 = copy.deepcopy(t2)
     for p in t1:
         t3[p] = (1 - lam) * t1[p] + lam * t2[p]
