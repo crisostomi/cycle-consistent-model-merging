@@ -4,12 +4,13 @@ core:
   version: 0.0.1
   tags:
     - dev
+    - n-models
 
 # MLP is trained over MNIST
 # ResNet20 is trained over CIFAR10
 defaults:
   - hydra: default
-  - matching: match_two_models # match_then_sync
+  - matching: match_n_models # match_then_sync
   - dataset: cifar10 # cifar10, mnist
   - model: resnet20 # resnet20, mlp
   - _self_ # as last argument to allow the override of parameters via this main config

@@ -1,6 +1,6 @@
 import torch
 
-from ccmm.matching.frank_wolfe_matching import frank_wolfe_weight_matching
+from ccmm.matching.frank_wolfe_matching import frank_wolfe_synchronized_matching, frank_wolfe_weight_matching
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.quadratic_matching import quadratic_weight_matching
 from ccmm.matching.synchronized_matching import synchronized_weight_matching
@@ -133,6 +133,37 @@ class FrankWolfeMatcher(Matcher):
             permutee=permutee,
             max_iter=self.max_iter,
             num_trials=self.num_trials,
+            return_perm_history=self.return_perm_history,
+            initialization_method=self.initialization_method,
+        )
+
+        if self.return_perm_history:
+            return permutation_indices, perm_history
+        else:
+            return permutation_indices
+
+
+class FrankWolfeSynchronizedMatcher(Matcher):
+    def __init__(
+        self,
+        name,
+        permutation_spec: PermutationSpec,
+        initialization_method,
+        max_iter=100,
+        return_perm_history=False,
+    ):
+        super().__init__(name, permutation_spec)
+        self.max_iter = max_iter
+        self.return_perm_history = return_perm_history
+        self.initialization_method = initialization_method
+
+    def __call__(self, models, symbols, combinations):
+        permutation_indices, perm_history = frank_wolfe_synchronized_matching(
+            models=models,
+            ps=self.permutation_spec,
+            symbols=symbols,
+            combinations=combinations,
+            max_iter=self.max_iter,
             return_perm_history=self.return_perm_history,
             initialization_method=self.initialization_method,
         )

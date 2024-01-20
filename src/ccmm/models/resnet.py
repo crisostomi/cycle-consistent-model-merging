@@ -7,22 +7,6 @@ from einops import reduce
 pylogger = logging.getLogger(__name__)
 
 
-def apply_modules(x, fs):
-    for f in fs:
-        x = f(x)
-    return x
-
-
-class LayerNorm2d(nn.Module):
-    def __init__(self, num_features):
-        super(LayerNorm2d, self).__init__()
-        self.layer_norm = nn.GroupNorm(num_groups=1, num_channels=num_features)
-
-    def forward(self, x):
-
-        return self.layer_norm(x)
-
-
 class ResNet(nn.Module):
     def __init__(self, depth, widen_factor, num_classes):
         super(ResNet, self).__init__()
@@ -76,6 +60,36 @@ class ResNet(nn.Module):
         return out
 
 
+def apply_modules(x, fs):
+    for f in fs:
+        x = f(x)
+    return x
+
+
+# class LayerNorm2d(nn.Module):
+#     def __init__(self, num_features):
+#         super(LayerNorm2d, self).__init__()
+#         self.layer_norm = nn.GroupNorm(num_groups=num_features, num_channels=num_features)
+
+#     def forward(self, x):
+
+#         return self.layer_norm(x)
+
+
+class LayerNorm2d(nn.Module):
+    def __init__(self, num_features):
+        super(LayerNorm2d, self).__init__()
+        self.layer_norm = nn.LayerNorm((num_features,))
+
+    def forward(self, x):
+        x = x.permute(0, 2, 3, 1)
+
+        x = self.layer_norm(x)
+
+        x = x.permute(0, 3, 1, 2)
+        return x
+
+
 class BlockGroup(nn.Module):
     num_channels: int = None
     num_blocks: int = None
@@ -91,7 +105,6 @@ class BlockGroup(nn.Module):
 
         assert self.num_blocks > 0
 
-        # this is how it's done in git-rebasin
         strides = [self.stride, 1, 1]
 
         for i in range(self.num_blocks):

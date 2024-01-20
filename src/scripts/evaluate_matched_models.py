@@ -59,7 +59,9 @@ def run(cfg: DictConfig) -> str:
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
-    permutations = load_permutations(cfg.permutations_path / "permutations.json")
+    permutations = load_permutations(
+        cfg.permutations_path / "permutations.json", factored=cfg.use_factored_permutations
+    )
 
     for fixed, permutee in all_combinations:
         # perms[a, b] maps b -> a
@@ -117,11 +119,15 @@ def evaluate_pair_of_models(
     metrics = ["acc", "loss"]
     for step, lambd in enumerate(lambdas):
         for metric in metrics:
-            logger.experiment.log({f"{metric}/test": results[f"test_{metric}"][step]}, step=step)
-            logger.experiment.log({f"{metric}/train": results[f"train_{metric}"][step]}, step=step)
+            logger.experiment.log(
+                {f"{permutee_id}->{fixed_id}/{metric}/test": results[f"test_{metric}"][step]}, step=step
+            )
+            logger.experiment.log(
+                {f"{permutee_id}->{fixed_id}/{metric}/train": results[f"train_{metric}"][step]}, step=step
+            )
 
     for mode in ["train", "test"]:
-        logger.experiment.log({f"loss_barrier/{mode}": results[f"{mode}_loss_barrier"]})
+        logger.experiment.log({f"{permutee_id}->{fixed_id}/loss_barrier/{mode}": results[f"{mode}_loss_barrier"]})
 
 
 def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):

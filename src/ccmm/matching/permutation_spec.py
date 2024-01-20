@@ -103,28 +103,28 @@ class ResNet20PermutationSpecBuilder(PermutationSpecBuilder):
             **norm_layer_axes("bn1.layer_norm", p="P_bg0"),
             ##########
             # layer 1
-            **easyblock_axes("layer1.0", p="P_bg0"),
+            **easyblock_axes("blockgroup1.block1", p="P_bg0"),
             **easyblock_axes(
-                "layer1.1",
+                "blockgroup1.block2",
                 p="P_bg0",
             ),
-            **easyblock_axes("layer1.2", p="P_bg0"),
+            **easyblock_axes("blockgroup1.block3", p="P_bg0"),
             ##########
             # layer 2
-            **shortcut_block_axes("layer2.0", p_rows="P_bg1", p_cols="P_bg0"),
+            **shortcut_block_axes("blockgroup2.block1", p_rows="P_bg1", p_cols="P_bg0"),
             **easyblock_axes(
-                "layer2.1",
+                "blockgroup2.block2",
                 p="P_bg1",
             ),
-            **easyblock_axes("layer2.2", p="P_bg1"),
+            **easyblock_axes("blockgroup2.block3", p="P_bg1"),
             ##########
             # layer 3
-            **shortcut_block_axes("layer3.0", p_rows="P_bg2", p_cols="P_bg1"),
+            **shortcut_block_axes("blockgroup3.block1", p_rows="P_bg2", p_cols="P_bg1"),
             **easyblock_axes(
-                "layer3.1",
+                "blockgroup3.block2",
                 p="P_bg2",
             ),
-            **easyblock_axes("layer3.2", p="P_bg2"),
+            **easyblock_axes("blockgroup3.block3", p="P_bg2"),
             ###########
             # output layer, only permute its columns as the rows are the output channels
             **dense_layer_axes("linear", p_rows=None, p_cols="P_bg2"),

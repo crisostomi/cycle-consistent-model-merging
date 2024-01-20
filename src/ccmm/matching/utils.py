@@ -53,9 +53,17 @@ def get_inverse_permutations(permutations: Dict[str, PermutationIndices]) -> Dic
     inv_permutations = {}
 
     for perm_name, perm in permutations.items():
-        perm_matrix = perm_indices_to_perm_matrix(perm)
+        if perm.dim() == 1:
+            perm_matrix = perm_indices_to_perm_matrix(perm)
+        else:
+            perm_matrix = perm
+
         inv_perm_matrix = perm_matrix.T
-        inv_permutations[perm_name] = perm_matrix_to_perm_indices(inv_perm_matrix)
+
+        if perm.dim() == 1:
+            inv_permutations[perm_name] = perm_matrix_to_perm_indices(inv_perm_matrix)
+        else:
+            inv_permutations[perm_name] = inv_perm_matrix
 
     return inv_permutations
 
