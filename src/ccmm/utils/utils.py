@@ -309,3 +309,7 @@ def unravel_index(
 
     coord = unravel_indices(indices, shape)
     return tuple(coord)
+
+
+def to_relative_path(path: Path):
+    return str(path.relative_to(PROJECT_ROOT))

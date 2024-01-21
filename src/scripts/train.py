@@ -17,7 +17,7 @@ from nn_core.serialization import NNCheckpointIO
 
 import ccmm  # noqa
 from ccmm.data.datamodule import MetaData
-from ccmm.utils.utils import build_callbacks, get_checkpoint_callback
+from ccmm.utils.utils import build_callbacks, get_checkpoint_callback, to_relative_path
 
 pylogger = logging.getLogger(__name__)
 
@@ -66,11 +66,10 @@ def run(cfg: DictConfig) -> str:
     pylogger.info("Starting training!")
     trainer.fit(model=model, datamodule=datamodule, ckpt_path=template_core.trainer_ckpt_path)
 
-    # TODO: save the models as relative paths and not absolute ones
     best_model_path = get_checkpoint_callback(callbacks).best_model_path
 
     best_model_info = {
-        "path": best_model_path,
+        "path": to_relative_path(best_model_path),
         "class": str(model.__class__.__module__ + "." + model.__class__.__qualname__),
     }
 

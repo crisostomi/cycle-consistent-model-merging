@@ -15,7 +15,7 @@ from nn_core.common.utils import seed_index_everything
 from nn_core.serialization import NNCheckpointIO
 
 from ccmm.matching.utils import restore_original_weights
-from ccmm.utils.utils import load_model_from_info, map_model_seed_to_symbol
+from ccmm.utils.utils import load_model_from_info, map_model_seed_to_symbol, to_relative_path
 
 pylogger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def save_merged_model(merged_model: LightningModule, cfg: DictConfig):
     model_class = merged_model.__class__.__module__ + "." + merged_model.__class__.__qualname__
 
     model_info = {
-        "path": str(ckpt_path),
+        "path": to_relative_path(ckpt_path),
         "class": model_class,
     }
 
