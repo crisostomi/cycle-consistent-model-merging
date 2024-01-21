@@ -15,10 +15,10 @@ model_seeds:
   - 1
   - 2
   - 3
-  # - 4
-  # - 5
+  - 4
+  - 5
 
-num_interpolation_steps: 3
+num_interpolation_steps: 5
 
 batch_size: 200
 num_workers: 14

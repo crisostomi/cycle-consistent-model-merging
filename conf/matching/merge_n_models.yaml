@@ -1,5 +1,5 @@
 defaults:
-  - merger: git_rebasin # dummy, git_rebasin, alternating_diffusion, synchronized
+  - merger: frank_wolfe_to_reference # dummy, git_rebasin, git_rebasin_pairwise, alternating_diffusion, synchronized, frank_wolfe_to_universe, frank_wolfe_to_reference
 
 seed_index: 4
 
@@ -14,9 +14,9 @@ trainer:
 model_seeds:
   - 1
   - 2
-  - 3
-  - 4
-  - 5
+  # - 3
+  # - 4
+  # - 5
 
 num_interpolation_steps: 3
 

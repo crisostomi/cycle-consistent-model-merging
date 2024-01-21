@@ -243,3 +243,10 @@ def solve_linear_assignment_problem(sim_matrix: torch.Tensor, return_matrix=Fals
 
     indices = torch.tensor(ci)
     return indices if not return_matrix else perm_indices_to_perm_matrix(indices)
+
+
+# def compute_self_dist_matrix(W):
+#     #
+#     # W: (n, d)
+#     if W.dim() == 2:
+#         W = W.unsqueeze(0)

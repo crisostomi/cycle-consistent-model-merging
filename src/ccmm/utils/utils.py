@@ -136,6 +136,8 @@ def l2_norm_models(state_dict1, state_dict2):
 
 
 def average_models(model_params):
+    if not isinstance(model_params, List):
+        model_params = list(model_params.values())
     return {k: torch.mean(torch.stack([p[k] for p in model_params]), dim=0) for k in model_params[0].keys()}
 
 
@@ -216,31 +218,7 @@ def load_permutations(path, factored=False):
         permutations = json.load(f)
 
     if factored:
-        symbols = set(permutations.keys())
-
-        unfactored_permutations = {
-            symbol: {
-                permutee: {perm: None for perm in permutations[symbol].keys()}
-                for permutee in symbols.difference(symbol)
-            }
-            for symbol in symbols
-        }
-        for symbol, perms in permutations.items():
-            for perm_name, perm in perms.items():
-                if perm is not None:
-                    permutations[symbol][perm_name] = torch.tensor(perm)
-
-        combinations = get_all_symbols_combinations(symbols)
-        for fixed, permutee in combinations:
-            for perm in permutations[fixed].keys():
-                res = (
-                    perm_indices_to_perm_matrix(permutations[fixed][perm])
-                    @ perm_indices_to_perm_matrix(permutations[permutee][perm]).T
-                )
-
-                unfactored_permutations[fixed][permutee][perm] = perm_matrix_to_perm_indices(res)
-
-        return unfactored_permutations
+        return unfactor_permutations(permutations)
 
     else:
         for source, targets in permutations.items():
@@ -250,6 +228,33 @@ def load_permutations(path, factored=False):
                         permutations[source][target][perm_name] = torch.tensor(perm)
 
         return permutations
+
+
+def unfactor_permutations(permutations):
+    symbols = set(permutations.keys())
+
+    unfactored_permutations = {
+        symbol: {
+            permutee: {perm: None for perm in permutations[symbol].keys()} for permutee in symbols.difference(symbol)
+        }
+        for symbol in symbols
+    }
+    for symbol, perms in permutations.items():
+        for perm_name, perm in perms.items():
+            if perm is not None:
+                permutations[symbol][perm_name] = torch.tensor(perm)
+
+    combinations = get_all_symbols_combinations(symbols)
+    for fixed, permutee in combinations:
+        for perm in permutations[fixed].keys():
+            res = (
+                perm_indices_to_perm_matrix(permutations[fixed][perm])
+                @ perm_indices_to_perm_matrix(permutations[permutee][perm]).T
+            )
+
+            unfactored_permutations[fixed][permutee][perm] = perm_matrix_to_perm_indices(res)
+
+    return unfactored_permutations
 
 
 class OnSaveCheckpointCallback(Callback):

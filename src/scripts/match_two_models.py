@@ -70,8 +70,3 @@ def main(cfg: omegaconf.DictConfig):
 
 if __name__ == "__main__":
     main()
-
-
-# 'layer1.0.shortcut.0.weight'
-# 'layer1.0.shortcut.1.bias'
-# 'layer1.0.shortcut.1.weight'

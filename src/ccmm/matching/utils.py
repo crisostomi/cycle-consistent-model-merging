@@ -146,13 +146,11 @@ def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
     :param except_axis: axis to skip
     """
     for axis, perm_id in enumerate(perms_to_apply):
-        # skip the axis we're trying to permute
-        if axis == except_axis:
+        # we only want to apply permutations for the other axis so to have a linear problem
+        if axis == except_axis or perm_id is None:
             continue
 
-        # None indicates that there is no permutation relevant to that axis
-        if perm_id is not None:
-            param = torch.index_select(param, axis, perm_matrices[perm_id].int())
+        param = torch.index_select(param, axis, perm_matrices[perm_id].int())
 
     return param
 

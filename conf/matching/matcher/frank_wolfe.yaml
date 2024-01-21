@@ -3,5 +3,5 @@ name: 'frank_wolfe'
 permutation_spec: ??
 max_iter: 100
 return_perm_history: True
-initialization_method: 'LAP' # 'sinkhorn', 'identity', 'random' or 'LAP'
+initialization_method: 'identity' # 'sinkhorn', 'identity', 'random' or 'LAP'
 num_trials: 1

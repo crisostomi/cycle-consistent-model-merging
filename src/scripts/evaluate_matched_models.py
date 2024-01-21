@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Dict
 
 import hydra
+import numpy as np
 import omegaconf
-import torch
+import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning import LightningModule
@@ -78,14 +79,15 @@ def run(cfg: DictConfig) -> str:
     train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
 
-    lambdas = torch.linspace(0, 1, steps=cfg.num_interpolation_steps)
+    lambdas = np.linspace(0, 1, num=cfg.num_interpolation_steps)
 
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
     canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
 
+    all_results = {}
     for fixed, permutee in canonical_combinations:
         restore_original_weights(models, model_orig_weights)
-        evaluate_pair_of_models(
+        results = evaluate_pair_of_models(
             models,
             fixed,
             permutee,
@@ -96,6 +98,9 @@ def run(cfg: DictConfig) -> str:
             core_cfg,
             logger,
         )
+        all_results[(fixed, permutee)] = results
+
+    log_results(all_results, lambdas)
 
     if logger is not None:
         logger.log_configuration(model=list(models.values())[0], cfg=core_cfg)
@@ -116,18 +121,7 @@ def evaluate_pair_of_models(
         fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching
     )
 
-    metrics = ["acc", "loss"]
-    for step, lambd in enumerate(lambdas):
-        for metric in metrics:
-            logger.experiment.log(
-                {f"{permutee_id}->{fixed_id}/{metric}/test": results[f"test_{metric}"][step]}, step=step
-            )
-            logger.experiment.log(
-                {f"{permutee_id}->{fixed_id}/{metric}/train": results[f"train_{metric}"][step]}, step=step
-            )
-
-    for mode in ["train", "test"]:
-        logger.experiment.log({f"{permutee_id}->{fixed_id}/loss_barrier/{mode}": results[f"{mode}_loss_barrier"]})
+    return results
 
 
 def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):
@@ -169,6 +163,33 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     return results
 
 
+def log_results(results, lambdas):
+
+    for metric in ["acc", "loss"]:
+        for mode in ["train", "test"]:
+            # all combinations (a, b), (a, c) ..
+            combinations = list(results.keys())
+
+            ys = [results[comb][f"{mode}_{metric}"] for comb in combinations]
+            comb_labels = [f"{comb[1]}->{comb[0]}" for comb in combinations]
+            wandb.log(
+                {
+                    f"{mode}_{metric}_interpolations": wandb.plot.line_series(
+                        xs=lambdas, ys=ys, keys=comb_labels, title=f"Interpolated {mode} {metric}"
+                    )
+                }
+            )
+
+    for mode in ["train", "test"]:
+
+        barriers = [results[comb][f"{mode}_loss_barrier"] for comb in combinations]
+        data = [[label, val] for (label, val) in zip(comb_labels, barriers)]
+        table = wandb.Table(data=data, columns=["combination", "barrier"])
+        wandb.log(
+            {f"{mode}_loss_barrier": wandb.plot.bar(table, "combination", "barrier", title=f"Loss barrier for {mode}")}
+        )
+
+
 def compute_loss_barrier(losses):
     """
     max_{lambda in [0,1]} loss(alpha * model_a + (1 - alpha) * model_b) - 0.5 * (loss(model_a) + loss(model_b))
@@ -181,6 +202,7 @@ def compute_loss_barrier(losses):
     return max(losses) - avg_loss
 
 
+# matching_n_models, matching
 @hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
