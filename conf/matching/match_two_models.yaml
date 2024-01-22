@@ -1,7 +1,7 @@
 defaults:
   - matcher: frank_wolfe # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic, dummy, frank_wolfe
 
-seed_index: 4
+seed_index: 0
 
 output_path: ${oc.env:PROJECT_ROOT}/output
 dataset_path: ${oc.env:PROJECT_ROOT}/data

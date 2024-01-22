@@ -346,30 +346,30 @@ def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
 
     # (P_i Wb_i)
     Wb_perm = perm_rows(perm=P_curr, x=Wb)
-    if len(Wb.shape) == 2 and debug:
-        assert torch.allclose(Wb_perm, P_curr @ Wb)
 
     if P_prev is not None:
         # (P_i Wb_i) P_{i-1}^T
         Wb_perm = perm_cols(x=Wb_perm, perm=P_prev.T)
 
-        if len(Wb.shape) == 2 and debug:
-            assert torch.allclose(Wb_perm, P_curr @ Wb @ P_prev.T)
-
     if len(Wa.shape) == 1:
         # vector case, result is the dot product of the vectors A^T B
-        return Wa.T @ Wb_perm
+        sim = Wa.T @ Wb_perm
     elif len(Wa.shape) == 2:
         # matrix case, result is the trace of the matrix product A^T B
-        return torch.trace(Wa.T @ Wb_perm).numpy()
+        sim = torch.trace(Wa.T @ Wb_perm).numpy()
     elif len(Wa.shape) == 3:
         # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
-        return torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+        sim = torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
     else:
-        return torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+        sim = torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+
+    if debug and len(Wa.shape) == 2:
+        assert torch.allclose(sim, torch.trace(Wa.T @ P_prev @ Wb))
+
+    return sim
 
 
-def compute_gradient_P_curr(Wa, Wb, P_prev):
+def compute_gradient_P_curr(Wa, Wb, P_prev, debug=True):
     """
     (A P_{l-1} B^T)
     """
@@ -382,8 +382,6 @@ def compute_gradient_P_curr(Wa, Wb, P_prev):
 
     # P_{l-1} B^T
     Wb_perm = perm_rows(x=Wb.transpose(1, 0), perm=P_prev)
-    if len(Wb.shape) == 2:
-        assert torch.allclose(Wb_perm, P_prev @ Wb.T, atol=1e-6)
 
     if len(Wa.shape) == 2:
         grad_P_curr = Wa @ Wb_perm
@@ -392,10 +390,13 @@ def compute_gradient_P_curr(Wa, Wb, P_prev):
     else:
         grad_P_curr = torch.einsum("ijkm,jnkm->in", Wa, Wb_perm)
 
+    if debug and len(Wa.shape) == 2:
+        assert torch.allclose(grad_P_curr, Wa @ P_prev @ Wb.T)
+
     return grad_P_curr
 
 
-def compute_gradient_P_prev(Wa, Wb, P_curr):
+def compute_gradient_P_prev(Wa, Wb, P_curr, debug=True):
     """
     (A^T P_l B)
 
@@ -406,8 +407,6 @@ def compute_gradient_P_prev(Wa, Wb, P_curr):
 
     # (P_l B)
     Wb_perm = perm_rows(perm=P_curr, x=Wb)
-    if len(Wb.shape) == 2:
-        assert torch.all(Wb_perm == P_curr @ Wb)
 
     if len(Wa.shape) == 2:
         grad_P_prev = Wa.T @ Wb_perm
@@ -415,6 +414,9 @@ def compute_gradient_P_prev(Wa, Wb, P_curr):
         grad_P_prev = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)
     else:
         grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
+
+    if debug and len(Wa.shape) == 2:
+        assert torch.allclose(grad_P_prev, Wa.T @ P_curr @ Wb)
 
     return grad_P_prev
 

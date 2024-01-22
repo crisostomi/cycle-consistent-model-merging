@@ -46,9 +46,6 @@ def run(cfg: DictConfig) -> str:
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
     canonical_combinations = [(source, target) for (source, target) in all_combinations if source < target]
 
-    # dicts for permutations and permuted params, D[a][b] refers to the permutation/params to map b -> a
-    permutations = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
-
     matcher = instantiate(cfg.matcher, permutation_spec=permutation_spec)
 
     permutations, perm_history = matcher(models, symbols=sorted_symbols, combinations=canonical_combinations)

@@ -102,15 +102,19 @@ class FrankWolfeSynchronizedMerger(Merger):
         name,
         permutation_spec: PermutationSpec,
         initialization_method,
+        average_in_universe=False,
         max_iter=100,
     ):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
+        self.average_in_universe = average_in_universe
         self.initialization_method = initialization_method
 
     def __call__(self, models):
-        merged_model = models[list(models.keys())[0]]
         symbols = list(models.keys())
+
+        merged_model = models[symbols[0]]
+
         combinations = get_all_symbols_combinations(symbols)
         canonical_combinations = [(source, target) for (source, target) in combinations if source < target]
 
@@ -133,7 +137,11 @@ class FrankWolfeSynchronizedMerger(Merger):
             updated_params = apply_permutation_to_statedict(self.permutation_spec, perms_to_apply, model_params[symbol])
             model_params[symbol] = updated_params
 
-        merged_params = average_models(model_params)
+        if self.average_in_universe:
+            merged_params = average_models(model_params)
+        else:
+            merged_params = model_params[symbols[0]]
+
         merged_model.model.load_state_dict(merged_params)
 
         return merged_model

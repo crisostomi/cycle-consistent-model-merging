@@ -203,7 +203,7 @@ def compute_loss_barrier(losses):
 
 
 # matching_n_models, matching
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching_n_models", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
