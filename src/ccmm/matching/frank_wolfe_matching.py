@@ -79,7 +79,9 @@ def collect_perm_sizes(perm_spec, ref_params):
     return perm_sizes
 
 
-def frank_wolfe_weight_matching_trial(params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100):
+def frank_wolfe_weight_matching_trial(
+    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100, device="cpu"
+):
 
     perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(
         perm_sizes, initialization_method, params_a, params_b, perm_spec
@@ -96,7 +98,7 @@ def frank_wolfe_weight_matching_trial(params_a, params_b, perm_sizes, initializa
             params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm, perm_sizes
         )
 
-        proj_grads = project_gradients(gradients)
+        proj_grads = project_gradients(gradients, device)
 
         line_search_step_func = partial(
             line_search_step,
@@ -184,28 +186,30 @@ def projected_grad_descent_weight_matching_trial(
     return perm_matrices, perm_matrices_history, new_obj
 
 
-def initialize_perm_matrices(perm_sizes, initialization_method, fixed=None, permutee=None, perm_spec=None):
+def initialize_perm_matrices(
+    perm_sizes, initialization_method, fixed=None, permutee=None, perm_spec=None, device="cpu"
+):
     if initialization_method == "identity":
-        return {p: torch.eye(n) for p, n in perm_sizes.items()}
+        return {p: torch.eye(n).to(device) for p, n in perm_sizes.items()}
     elif initialization_method == "random":
-        return {p: torch.rand(n, n) for p, n in perm_sizes.items()}
+        return {p: torch.rand(n, n).to(device) for p, n in perm_sizes.items()}
     elif initialization_method == "sinkhorn":
-        return {p: sinkhorn_knopp(torch.rand(n, n)) for p, n in perm_sizes.items()}
+        return {p: sinkhorn_knopp(torch.rand(n, n), device=device) for p, n in perm_sizes.items()}
     elif initialization_method == "LAP":
         perm_indices = weight_matching(perm_spec, fixed, permutee)
-        return {p: perm_indices_to_perm_matrix(perm_indices[p]) for p in perm_indices.keys()}
+        return {p: perm_indices_to_perm_matrix(perm_indices[p]).to(device) for p in perm_indices.keys()}
     else:
         raise ValueError(f"Unknown initialization method {initialization_method}")
 
 
-def project_gradients(gradients):
+def project_gradients(gradients, device):
     proj_grads = {}
 
     for perm_name, grad in gradients.items():
 
         proj_grad = solve_linear_assignment_problem(grad, return_matrix=True)
 
-        proj_grads[perm_name] = proj_grad
+        proj_grads[perm_name] = proj_grad.to(device)
 
     return proj_grads
 
@@ -484,7 +488,7 @@ def update_perm_matrices(perm_matrices, proj_grads, step_size):
     return new_perm_matrices
 
 
-def sinkhorn_knopp(matrix, tol=1e-10, max_iterations=1000):
+def sinkhorn_knopp(matrix, tol=1e-10, max_iterations=1000, device="cpu"):
     """
     Applies the Sinkhorn-Knopp algorithm to make a non-negative matrix doubly stochastic.
 
@@ -506,10 +510,11 @@ def sinkhorn_knopp(matrix, tol=1e-10, max_iterations=1000):
 
     # Normalize the matrix so that all elements sum to 1
     matrix = matrix / (matrix.sum() + 1e-16)
+    matrix = matrix.to(device)
 
     # Initialize row and column scaling factors
-    row_scale = torch.ones(R)
-    col_scale = torch.ones(C)
+    row_scale = torch.ones(R).to(device)
+    col_scale = torch.ones(C).to(device)
 
     for _ in range(max_iterations):
         # Scale rows

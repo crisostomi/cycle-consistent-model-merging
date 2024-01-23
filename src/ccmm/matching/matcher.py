@@ -151,10 +151,12 @@ class FrankWolfeSynchronizedMatcher(Matcher):
         permutation_spec: PermutationSpec,
         initialization_method,
         max_iter=100,
+        verbose=False,
     ):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
         self.initialization_method = initialization_method
+        self.verbose = verbose
 
     def __call__(self, models, symbols, combinations):
         permutation_indices, _ = frank_wolfe_synchronized_matching(
@@ -164,6 +166,7 @@ class FrankWolfeSynchronizedMatcher(Matcher):
             combinations=combinations,
             max_iter=self.max_iter,
             initialization_method=self.initialization_method,
+            verbose=self.verbose,
         )
 
         return permutation_indices, None

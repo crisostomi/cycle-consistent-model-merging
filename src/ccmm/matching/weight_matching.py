@@ -237,7 +237,7 @@ def alternating_diffusion(
 
 
 def solve_linear_assignment_problem(sim_matrix: torch.Tensor, return_matrix=False):
-    ri, ci = linear_sum_assignment(sim_matrix.detach().numpy(), maximize=True)
+    ri, ci = linear_sum_assignment(sim_matrix.cpu().detach().numpy(), maximize=True)
 
     assert (torch.tensor(ri) == torch.arange(len(ri))).all()
 

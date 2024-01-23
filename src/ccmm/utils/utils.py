@@ -313,3 +313,21 @@ def unravel_index(
 
 def to_relative_path(path: Path):
     return str(path.relative_to(PROJECT_ROOT))
+
+
+def vector_to_state_dict(vec, model):
+    """
+    Convert a flattened parameter vector into a state_dict for the model.
+    """
+    state_dict = model.state_dict()
+
+    pointer = 0
+    for name, param in state_dict.items():
+        num_param = param.numel()  # Number of elements in the parameter
+
+        # Replace the original parameter with the corresponding part of the vector
+        state_dict[name].copy_(vec[pointer : pointer + num_param].view_as(param))
+
+        pointer += num_param
+
+    return state_dict
