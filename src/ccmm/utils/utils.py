@@ -6,7 +6,9 @@ from pydoc import locate
 from typing import Any, Dict, List, Tuple
 
 import hydra
+import matplotlib.colors as colors
 import matplotlib.pyplot as plt
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from omegaconf import ListConfig
@@ -34,6 +36,21 @@ MODEL_SEED_TO_SYMBOL = {
     "dummy_b": "y",
     "dummy_c": "z",
 }
+
+
+def project_onto(a, b):
+    return torch.dot(a, b) / torch.dot(b, b) * b
+
+
+def normalize_unit_norm(a):
+    return a / torch.norm(a, p=2)
+
+
+def to_np(tensor):
+    if tensor.nelement() == 1:  # Check if the tensor is a scalar
+        return tensor.item()  # Convert a scalar tensor to a Python number
+    else:
+        return tensor.cpu().detach().numpy()  # Convert a tensor to a numpy array
 
 
 def map_model_seed_to_symbol(seed):
@@ -331,3 +348,10 @@ def vector_to_state_dict(vec, model):
         pointer += num_param
 
     return state_dict
+
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    return colors.LinearSegmentedColormap.from_list(
+        "trunc({n},{a:.2f},{b:.2f})".format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)),
+    )
