@@ -1,0 +1,3 @@
+_target_: ccmm.matching.merger.DummyMerger
+name: 'dummy'
+permutation_spec: ??

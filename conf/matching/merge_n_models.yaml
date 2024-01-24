@@ -1,0 +1,30 @@
+defaults:
+  - merger: frank_wolfe_to_universe # dummy, git_rebasin, git_rebasin_pairwise, alternating_diffusion, synchronized, frank_wolfe_to_universe, frank_wolfe_to_reference
+
+seed_index: 0
+
+output_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset.name}/${matching.merger.name}/}
+dataset_path: ${oc.env:PROJECT_ROOT}/data
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: 1
+  precision: 32
+
+model_seeds:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+
+num_interpolation_steps: 3
+
+batch_size: 5000
+num_workers: 14
+
+model_info_path: ${oc.env:PROJECT_ROOT}/output/${dataset.name}/${model.model_identifier}
+
+# results_path: ${path:${matching.output_path}/
+
+out_model_info_path: ${matching.output_path}/${model.model_identifier}_merged.json

@@ -1,1 +1,4 @@
-{"path": "/home/donato/Code/cycle-consistent-model-merging/storage/cycle-consistent-model-merging/swdfezf8/checkpoints/epoch=84-step=10000.ckpt", "class": "ccmm.pl_modules.pl_module.MyLightningModule"}
+{
+    "path": "storage/cycle-consistent-model-merging/t96ntdg9/checkpoints/epoch=84-step=10000.ckpt",
+    "class": "ccmm.pl_modules.pl_module.MyLightningModule"
+}

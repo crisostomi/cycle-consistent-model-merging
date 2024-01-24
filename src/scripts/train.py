@@ -17,7 +17,7 @@ from nn_core.serialization import NNCheckpointIO
 
 import ccmm  # noqa
 from ccmm.data.datamodule import MetaData
-from ccmm.utils.utils import build_callbacks, get_checkpoint_callback
+from ccmm.utils.utils import build_callbacks, get_checkpoint_callback, to_relative_path
 
 pylogger = logging.getLogger(__name__)
 
@@ -69,12 +69,12 @@ def run(cfg: DictConfig) -> str:
     best_model_path = get_checkpoint_callback(callbacks).best_model_path
 
     best_model_info = {
-        "path": best_model_path,
+        "path": to_relative_path(best_model_path),
         "class": str(model.__class__.__module__ + "." + model.__class__.__qualname__),
     }
 
     model_identifier = f"{cfg.nn.module.model_name}_{cfg.train.seed_index}"
-    model_info_path = Path(cfg.nn.output_path) / cfg.nn.dataset_name / f"{model_identifier}.json"
+    model_info_path = Path(cfg.nn.output_path) / cfg.dataset.name / f"{model_identifier}.json"
     model_info_path.parent.mkdir(parents=True, exist_ok=True)
 
     json.dump(best_model_info, open(model_info_path, "w+"))
@@ -89,7 +89,7 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="resnet", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

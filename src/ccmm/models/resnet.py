@@ -1,9 +1,8 @@
 import logging
 
-import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.nn.init as init
+from einops import reduce
 
 pylogger = logging.getLogger(__name__)
 
@@ -11,89 +10,132 @@ pylogger = logging.getLogger(__name__)
 class ResNet(nn.Module):
     def __init__(self, depth, widen_factor, num_classes):
         super(ResNet, self).__init__()
-        self.in_planes = 16
+        self.in_planes = 32
+        # standard (R, G, B)
+        input_channels = 3
 
         assert (depth - 4) % 6 == 0, "Wide-resnet depth should be 6n+4"
-        num_blocks_per_layer = (depth - 4) / 6
+        num_blocks_per_layer = (depth - 4) // 6
 
-        planes = [16, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
+        out_channels = [16 * widen_factor, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
 
-        spatial_dimensions = [32, 32, 32, 16]
-
-        self.conv1 = conv3x3(3, planes[0])
-        self.bn1 = nn.LayerNorm([planes[0], 32, 32])
-
-        self.layer1 = self._wide_layer(
-            wide_basic, planes=planes[1], num_blocks=num_blocks_per_layer, stride=1, spatial_dim=spatial_dimensions[1]
+        # (16 * wm, input_channels, 3, 3)
+        self.conv1 = nn.Conv2d(
+            in_channels=input_channels, out_channels=out_channels[0], kernel_size=3, padding=1, bias=False
         )
-        self.layer2 = self._wide_layer(
-            wide_basic, planes=planes[2], num_blocks=num_blocks_per_layer, stride=2, spatial_dim=spatial_dimensions[2]
-        )
-        self.layer3 = self._wide_layer(
-            wide_basic, planes=planes[3], num_blocks=num_blocks_per_layer, stride=2, spatial_dim=spatial_dimensions[3]
-        )
+        # (16 * wm)
+        self.bn1 = LayerNorm2d(out_channels[0])
 
-        self.out_bn = nn.LayerNorm([planes[3], 8, 8])
-        self.linear = nn.Linear(planes[3], num_classes)
+        strides = [1, 2, 2]
 
-    def _wide_layer(self, block, planes, num_blocks, stride, spatial_dim):
-        strides = [stride] + [1] * (int(num_blocks) - 1)
-        layers = []
+        for i in range(3):
+            self.add_module(
+                "blockgroup{}".format(i + 1),
+                BlockGroup(
+                    in_features=out_channels[i],
+                    num_channels=out_channels[i + 1],
+                    num_blocks=num_blocks_per_layer,
+                    stride=strides[i],
+                ),
+            )
 
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride, spatial_dim))
-            spatial_dim = spatial_dim // stride
-            self.in_planes = planes
-
-        return nn.Sequential(*layers)
+        self.linear = nn.Linear(out_channels[3], num_classes)
 
     def forward(self, x):
-        out = self.bn1(self.conv1(x))
+        out = F.relu(self.bn1(self.conv1(x)))
 
-        out = self.layer1(out)
         # (B, 32, 32, 32)
-        out = self.layer2(out)
+        out = self.blockgroup1(out)
+        # (B, 64, 32, 32)
+        out = self.blockgroup2(out)
         # (B, 64, 16, 16)
-        out = self.layer3(out)
+        out = self.blockgroup3(out)
 
-        out = F.relu(self.out_bn(out))
-        out = F.avg_pool2d(out, 8)
-        out = out.view(out.size(0), -1)
+        out = reduce(out, "n c h w -> n c", "mean")
+
         out = self.linear(out)
+
+        out = F.log_softmax(out, dim=1)
 
         return out
 
 
-def conv3x3(in_planes, out_planes, stride=1):
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+def apply_modules(x, fs):
+    for f in fs:
+        x = f(x)
+    return x
 
 
-def conv_init(m):
-    classname = m.__class__.__name__
-    if classname.find("Conv") != -1:
-        init.xavier_uniform_(m.weight, gain=np.sqrt(2))
-        init.constant_(m.bias, 0)
-    elif classname.find("LayerNorm") != -1:
-        init.constant_(m.weight, 1)
-        init.constant_(m.bias, 0)
+# class LayerNorm2d(nn.Module):
+#     def __init__(self, num_features):
+#         super(LayerNorm2d, self).__init__()
+#         self.layer_norm = nn.GroupNorm(num_groups=num_features, num_channels=num_features)
+
+#     def forward(self, x):
+
+#         return self.layer_norm(x)
 
 
-class wide_basic(nn.Module):
-    def __init__(self, in_planes, planes, stride, spatial_dim):
-        super(wide_basic, self).__init__()
-        # input_dim = [in_planes, dim, dim]
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, padding=1, bias=False)
-        self.bn1 = nn.LayerNorm([planes, spatial_dim, spatial_dim])
+class LayerNorm2d(nn.Module):
+    def __init__(self, num_features):
+        super(LayerNorm2d, self).__init__()
+        self.layer_norm = nn.LayerNorm((num_features,))
+
+    def forward(self, x):
+        x = x.permute(0, 2, 3, 1)
+
+        x = self.layer_norm(x)
+
+        x = x.permute(0, 3, 1, 2)
+        return x
+
+
+class BlockGroup(nn.Module):
+    num_channels: int = None
+    num_blocks: int = None
+    stride: int = None
+    in_features: int = None
+
+    def __init__(self, in_features, num_channels, num_blocks, stride):
+        super(BlockGroup, self).__init__()
+        self.num_channels = num_channels
+        self.num_blocks = num_blocks
+        self.stride = stride
+        self.in_features = in_features
+
+        assert self.num_blocks > 0
+
+        strides = [self.stride, 1, 1]
+
+        for i in range(self.num_blocks):
+            self.add_module(
+                "block{}".format(i + 1),
+                Block(self.in_features, self.num_channels, strides[i]),
+            )
+            self.in_features = self.num_channels
+
+    def forward(self, x):
+        return apply_modules(x, self.children())
+
+
+class Block(nn.Module):
+    def __init__(self, in_channels, out_channels, stride):
+        super(Block, self).__init__()
+        # input_dim = [batch_size, in_channels, dim, dim]
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = LayerNorm2d(out_channels)
 
         # input_dim = [planes, dim, dim]
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn2 = nn.LayerNorm([planes, spatial_dim // stride, spatial_dim // stride])
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = LayerNorm2d(out_channels)
 
         self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != planes:
+        if stride != 1:
+            assert stride == 2
+
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride, bias=False),
-                nn.LayerNorm([planes, spatial_dim // stride, spatial_dim // stride]),  # nn.GroupNorm(1, planes)
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+                LayerNorm2d(out_channels),
             )
 
     def forward(self, x):
@@ -103,8 +145,7 @@ class wide_basic(nn.Module):
 
         h = self.conv2(h)
         h = self.bn2(h)
-        h = F.relu(h)
 
-        out = h + self.shortcut(x)
+        out = F.relu(h + self.shortcut(x))
 
         return out

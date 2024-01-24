@@ -39,11 +39,25 @@ pip install -e .[dev]
 
 ## Usage
 
-### Git-Rebasin
+All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use. You can train models using `train.py` with a dataset and model of your choice.
 
-All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use.
+### Matching two models
 
-1. train your models using `train.py`, making sure to change the random seed so to have two different modes
-2. get the permutations to align the two models (identified by their seed in the config) using `match_and_sync.py` with config `git_rebasin``
-3. evaluate the interpolation of the models using `evaluate_matched_models.py` and the same config used for the previous step.
-4. results are found in `results/${dataset}/match_and_sync/None`
+1. get the permutations to align the two models (identified by their seed in the config) by running `match_two_models.py`. The config is `conf/matching.yaml` (see inside the config to see the subconfigs).
+2. evaluate the interpolation of the models using `evaluate_matched_models.py` and the same config used for the previous step. Be sure to have `matching.yaml` as config in the script itself.
+
+To change the matching technique, you have to change the `matcher` in `conf/matching/match_two_models.yaml`. Each matcher has its own config file in `conf/matching/matcher/`.
+
+### Matching multiple models
+
+1. get the permutations to align the models (identified by their seed in the config) by running `match_n_models.py`. The config is `conf/matching_n_models.yaml` (see inside the config to see the subconfigs).
+2. evaluate the interpolation of the models using `evaluate_matched_models.py` and the same config used for the previous step.  Be sure to have `matching_n_models.yaml` as config in the script itself.
+
+To change the matching technique, you have to change the `matcher` in `conf/matching/match_n_models.yaml`. Each matcher has its own config file in `conf/matching/matcher/`.
+
+### Merging models
+
+1. get the merged model by running `merge_n_models.py`.
+2. evaluate the merged model using `evaluate_merged_model.py` and the same config used for the previous step.
+
+To change the merging technique, you have to change the `merger` in `conf/matching/merge_n_models.yaml`. Each merger has its own config file in `conf/matching/merger/`.

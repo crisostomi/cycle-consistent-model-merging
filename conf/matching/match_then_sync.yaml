@@ -40,7 +40,7 @@ datasets:
     transform: ${transform}
 
 permutation_spec_builder:
-  _target_: ccmm.matching.weight_matching.MLPPermutationSpecBuilder
+  _target_: ccmm.matching.permutation_spec.MLPPermutationSpecBuilder
   num_hidden_layers: 4
 
 transform:

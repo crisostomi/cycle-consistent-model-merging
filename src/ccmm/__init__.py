@@ -5,6 +5,9 @@ from omegaconf import OmegaConf
 
 from nn_core.console_logging import NNRichHandler
 
+import ccmm  # NOQA
+from ccmm.matching.weight_matching import LayerIterationOrder  # NOQA
+
 # Required workaround because PyTorch Lightning configures the logging on import,
 # thus the logging configuration defined in the __init__.py must be called before
 # the lightning import otherwise it has no effect.
@@ -23,6 +26,14 @@ def decode_path(path):
 
 
 OmegaConf.register_new_resolver("path", lambda path: decode_path(path))
+
+
+def enum_resolver(enum_class: str, enum_member: str):  # NOQA
+    enum_class = eval(enum_class)  # NOQA
+    return enum_class[enum_member]
+
+
+OmegaConf.register_new_resolver("enum", enum_resolver)
 
 FORMAT = "%(message)s"
 logging.basicConfig(

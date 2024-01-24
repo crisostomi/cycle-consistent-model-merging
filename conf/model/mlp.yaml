@@ -2,5 +2,5 @@ name: MLP
 model_identifier: ${model.name}
 
 permutation_spec_builder:
-  _target_: ccmm.matching.weight_matching.MLPPermutationSpecBuilder
+  _target_: ccmm.matching.permutation_spec.MLPPermutationSpecBuilder
   num_hidden_layers: 4

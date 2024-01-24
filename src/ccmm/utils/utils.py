@@ -3,10 +3,12 @@ import json
 import logging
 from pathlib import Path
 from pydoc import locate
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import hydra
+import matplotlib.colors as colors
 import matplotlib.pyplot as plt
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from omegaconf import ListConfig
@@ -14,7 +16,10 @@ from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 from scipy.interpolate import interp1d
 from scipy.misc import derivative
 
+from nn_core.common import PROJECT_ROOT
 from nn_core.serialization import load_model
+
+from ccmm.matching.utils import get_all_symbols_combinations, perm_indices_to_perm_matrix, perm_matrix_to_perm_indices
 
 ModelParams = Dict[str, torch.Tensor]
 
@@ -31,6 +36,21 @@ MODEL_SEED_TO_SYMBOL = {
     "dummy_b": "y",
     "dummy_c": "z",
 }
+
+
+def project_onto(a, b):
+    return torch.dot(a, b) / torch.dot(b, b) * b
+
+
+def normalize_unit_norm(a):
+    return a / torch.norm(a, p=2)
+
+
+def to_np(tensor):
+    if tensor.nelement() == 1:  # Check if the tensor is a scalar
+        return tensor.item()  # Convert a scalar tensor to a Python number
+    else:
+        return tensor.cpu().detach().numpy()  # Convert a tensor to a numpy array
 
 
 def map_model_seed_to_symbol(seed):
@@ -118,10 +138,24 @@ def plot_cumulative_density(neuron_dists, min_value, num_radii):
 
 
 def linear_interpolation(lam, t1, t2):
+    pylogger.info(f"Evaluating interpolated model with lambda: {lam}")
+
     t3 = copy.deepcopy(t2)
     for p in t1:
         t3[p] = (1 - lam) * t1[p] + lam * t2[p]
     return t3
+
+
+def l2_norm_models(state_dict1, state_dict2):
+    """Calculate the L2 norm of the difference between two state dictionaries."""
+    diff_squared_sum = sum(torch.sum((state_dict1[key] - state_dict2[key]) ** 2) for key in state_dict1)
+    return torch.sqrt(diff_squared_sum)
+
+
+def average_models(model_params):
+    if not isinstance(model_params, List):
+        model_params = list(model_params.values())
+    return {k: torch.mean(torch.stack([p[k] for p in model_params]), dim=0) for k in model_params[0].keys()}
 
 
 def get_checkpoint_callback(callbacks):
@@ -153,12 +187,15 @@ def block(i, j, n):
     return slice(i * n, (i + 1) * n), slice(j * n, (j + 1) * n)
 
 
-def load_model_from_info(model_info_path, seed):
-    model_info_path_seed = model_info_path + f"_{seed}.json"
+def load_model_from_info(model_info_path, seed=None, zipped=True):
+    suffix = "" if seed is None else f"_{seed}.json"
+    model_info_path_seed = model_info_path + suffix
+
     model_info = json.load(open(model_info_path_seed))
     model_class = locate(model_info["class"])
 
-    model = load_model(model_class, checkpoint_path=Path(model_info["path"] + ".zip"))
+    suffix = ".zip" if zipped else ""
+    model = load_model(model_class, checkpoint_path=Path(str(PROJECT_ROOT) + "/" + model_info["path"] + suffix))
     model.eval()
 
     return model
@@ -181,17 +218,60 @@ def save_permutations(permutations: Dict[str, Dict], path: str):
         json.dump(permutations, f)
 
 
-def load_permutations(path):
+def save_factored_permutations(permutations: Dict[str, Dict], path: str):
+
+    for symbol, perms in permutations.items():
+        for perm_name, perm in perms.items():
+            if perm is None:
+                continue
+            permutations[symbol][perm_name] = perm.tolist()
+
+    with open(path, "w+") as f:
+        json.dump(permutations, f)
+
+
+def load_permutations(path, factored=False):
     with open(path, "r") as f:
         permutations = json.load(f)
 
-    for source, targets in permutations.items():
-        for target, source_target_perms in targets.items():
-            for perm_name, perm in source_target_perms.items():
-                if perm is not None:
-                    permutations[source][target][perm_name] = torch.tensor(perm)
+    if factored:
+        return unfactor_permutations(permutations)
 
-    return permutations
+    else:
+        for source, targets in permutations.items():
+            for target, source_target_perms in targets.items():
+                for perm_name, perm in source_target_perms.items():
+                    if perm is not None:
+                        permutations[source][target][perm_name] = torch.tensor(perm)
+
+        return permutations
+
+
+def unfactor_permutations(permutations):
+    symbols = set(permutations.keys())
+
+    unfactored_permutations = {
+        symbol: {
+            permutee: {perm: None for perm in permutations[symbol].keys()} for permutee in symbols.difference(symbol)
+        }
+        for symbol in symbols
+    }
+    for symbol, perms in permutations.items():
+        for perm_name, perm in perms.items():
+            if perm is not None:
+                permutations[symbol][perm_name] = torch.tensor(perm)
+
+    combinations = get_all_symbols_combinations(symbols)
+    for fixed, permutee in combinations:
+        for perm in permutations[fixed].keys():
+            res = (
+                perm_indices_to_perm_matrix(permutations[fixed][perm])
+                @ perm_indices_to_perm_matrix(permutations[permutee][perm]).T
+            )
+
+            unfactored_permutations[fixed][permutee][perm] = perm_matrix_to_perm_indices(res)
+
+    return unfactored_permutations
 
 
 class OnSaveCheckpointCallback(Callback):
@@ -201,3 +281,77 @@ class OnSaveCheckpointCallback(Callback):
         metadata = getattr(pl_module, "metadata", None)
         if metadata is not None:
             checkpoint["metadata"] = metadata
+
+
+def unravel_indices(
+    indices: torch.LongTensor,
+    shape: Tuple[int, ...],
+) -> torch.LongTensor:
+    r"""Converts flat indices into unraveled coordinates in a target shape.
+
+    Args:
+        indices: A tensor of (flat) indices, (*, N).
+        shape: The targeted shape, (D,).
+
+    Returns:
+        The unraveled coordinates, (*, N, D).
+    """
+
+    coord = []
+
+    for dim in reversed(shape):
+        coord.append(indices % dim)
+        indices = indices // dim
+
+    coord = torch.stack(coord[::-1], dim=-1)
+
+    return coord
+
+
+def unravel_index(
+    indices: torch.LongTensor,
+    shape: Tuple[int, ...],
+) -> Tuple[torch.LongTensor, ...]:
+    r"""Converts flat indices into unraveled coordinates in a target shape.
+
+    This is a `torch` implementation of `numpy.unravel_index`.
+
+    Args:
+        indices: A tensor of (flat) indices, (N,).
+        shape: The targeted shape, (D,).
+
+    Returns:
+        A tuple of unraveled coordinate tensors of shape (D,).
+    """
+
+    coord = unravel_indices(indices, shape)
+    return tuple(coord)
+
+
+def to_relative_path(path: Path):
+    return str(path.relative_to(PROJECT_ROOT))
+
+
+def vector_to_state_dict(vec, model):
+    """
+    Convert a flattened parameter vector into a state_dict for the model.
+    """
+    state_dict = model.state_dict()
+
+    pointer = 0
+    for name, param in state_dict.items():
+        num_param = param.numel()  # Number of elements in the parameter
+
+        # Replace the original parameter with the corresponding part of the vector
+        state_dict[name].copy_(vec[pointer : pointer + num_param].view_as(param))
+
+        pointer += num_param
+
+    return state_dict
+
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    return colors.LinearSegmentedColormap.from_list(
+        "trunc({n},{a:.2f},{b:.2f})".format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)),
+    )

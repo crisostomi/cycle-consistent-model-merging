@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Dict
 
 import hydra
+import numpy as np
 import omegaconf
-import torch
+import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning import LightningModule
@@ -17,20 +18,19 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 from nn_core.model_logging import NNLogger
 
-from ccmm.matching.weight_matching import apply_permutation
-from ccmm.utils.matching_utils import get_all_symbols_combinations, restore_original_weights
+from ccmm.matching.utils import apply_permutation_to_statedict, get_all_symbols_combinations, restore_original_weights
 from ccmm.utils.utils import linear_interpolation, load_model_from_info, load_permutations, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
-    # [1, 2, 3, ..]
     core_cfg = cfg
     cfg = cfg.matching
 
     seed_index_everything(cfg)
 
+    # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
     cfg.results_path = Path(cfg.results_path) / f"{len(model_seeds)}"
 
@@ -60,11 +60,13 @@ def run(cfg: DictConfig) -> str:
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()
 
-    permutations = load_permutations(cfg.permutations_path / "permutations.json")
+    permutations = load_permutations(
+        cfg.permutations_path / "permutations.json", factored=cfg.use_factored_permutations
+    )
 
     for fixed, permutee in all_combinations:
         # perms[a, b] maps b -> a
-        updated_params[fixed][permutee] = apply_permutation(
+        updated_params[fixed][permutee] = apply_permutation_to_statedict(
             permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )
         restore_original_weights(models, model_orig_weights)
@@ -77,14 +79,15 @@ def run(cfg: DictConfig) -> str:
     train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
 
-    lambdas = torch.linspace(0, 1, steps=cfg.num_interpolation_steps)
+    lambdas = np.linspace(0, 1, num=cfg.num_interpolation_steps)
 
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
     canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
 
+    all_results = {}
     for fixed, permutee in canonical_combinations:
         restore_original_weights(models, model_orig_weights)
-        evaluate_pair_of_models(
+        results = evaluate_pair_of_models(
             models,
             fixed,
             permutee,
@@ -95,6 +98,9 @@ def run(cfg: DictConfig) -> str:
             core_cfg,
             logger,
         )
+        all_results[(fixed, permutee)] = results
+
+    log_results(all_results, lambdas)
 
     if logger is not None:
         logger.log_configuration(model=list(models.values())[0], cfg=core_cfg)
@@ -108,16 +114,14 @@ def evaluate_pair_of_models(
 ):
     fixed_model = models[fixed_id]
     permutee_model = models[permutee_id]
+
     permutee_model.model.load_state_dict(updated_params[fixed_id][permutee_id])
 
     results = evaluate_interpolated_models(
         fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching
     )
 
-    metrics = ["acc", "loss"]
-    for step, lambd in enumerate(lambdas):
-        for metric in metrics:
-            logger.experiment.log({f"{metric}": results[f"test_{metric}"][step]}, step=step)
+    return results
 
 
 def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):
@@ -136,6 +140,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     trainer = instantiate(cfg.trainer)
 
     for lam in tqdm(lambdas):
+
         interpolated_params = linear_interpolation(lam, fixed_dict, permutee_dict)
         permutee.model.load_state_dict(interpolated_params)
 
@@ -149,10 +154,56 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
         results["test_acc"].append(test_results[0]["acc/test"])
         results["test_loss"].append(test_results[0]["loss/test"])
 
+    train_loss_barrier = compute_loss_barrier(results["train_loss"])
+    test_loss_barrier = compute_loss_barrier(results["test_loss"])
+
+    results["train_loss_barrier"] = train_loss_barrier
+    results["test_loss_barrier"] = test_loss_barrier
+
     return results
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
+def log_results(results, lambdas):
+
+    for metric in ["acc", "loss"]:
+        for mode in ["train", "test"]:
+            # all combinations (a, b), (a, c) ..
+            combinations = list(results.keys())
+
+            ys = [results[comb][f"{mode}_{metric}"] for comb in combinations]
+            comb_labels = [f"{comb[1]}->{comb[0]}" for comb in combinations]
+            wandb.log(
+                {
+                    f"{mode}_{metric}_interpolations": wandb.plot.line_series(
+                        xs=lambdas, ys=ys, keys=comb_labels, title=f"Interpolated {mode} {metric}"
+                    )
+                }
+            )
+
+    for mode in ["train", "test"]:
+
+        barriers = [results[comb][f"{mode}_loss_barrier"] for comb in combinations]
+        data = [[label, val] for (label, val) in zip(comb_labels, barriers)]
+        table = wandb.Table(data=data, columns=["combination", "barrier"])
+        wandb.log(
+            {f"{mode}_loss_barrier": wandb.plot.bar(table, "combination", "barrier", title=f"Loss barrier for {mode}")}
+        )
+
+
+def compute_loss_barrier(losses):
+    """
+    max_{lambda in [0,1]} loss(alpha * model_a + (1 - alpha) * model_b) - 0.5 * (loss(model_a) + loss(model_b))
+    """
+    model_a_loss = losses[0]
+    model_b_loss = losses[-1]
+
+    avg_loss = (model_a_loss + model_b_loss) / 2
+
+    return max(losses) - avg_loss
+
+
+# matching_n_models, matching
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching_n_models", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 
