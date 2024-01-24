@@ -1,5 +1,5 @@
 name: ResNet
-widen_factor: 2
+widen_factor: 16
 depth: 22
 model_identifier: ${model.name}_${model.depth}_${model.widen_factor}
 
