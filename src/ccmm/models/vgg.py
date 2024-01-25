@@ -18,9 +18,9 @@ class VGG(nn.Module):
         self.classifier = nn.Sequential(
             *[
                 nn.Linear(classifier_width, classifier_width),
-                nn.ReLU(inplace=True),
+                nn.ReLU(),
                 nn.Linear(classifier_width, classifier_width),
-                nn.ReLU(inplace=True),
+                nn.ReLU(),
                 nn.Linear(classifier_width, num_classes),
             ]
         )
@@ -32,7 +32,7 @@ class VGG(nn.Module):
 
         out = self.classifier(out)
 
-        return F.log_softmax(out, dim=-1)
+        return F.log_softmax(out, dim=1)
 
     def _make_layers(self, cfg):
         layers = []
@@ -44,7 +44,7 @@ class VGG(nn.Module):
                 layers += [
                     nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
                     LayerNorm2d(x),
-                    nn.ReLU(inplace=True),
+                    nn.ReLU(),
                 ]
                 in_channels = x
             else:

@@ -14,7 +14,7 @@ data:
     test: 4
 
   batch_size:
-    train: 512
+    train: 100
     val: 512
     test: 512
 
@@ -28,15 +28,16 @@ module:
   optimizer:
     _target_: torch.optim.SGD
     lr: 0.1
-    momentum: 0.9
-    weight_decay: 0.0005
+    # momentum: 0.9
+    weight_decay: 5e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
 
   lr_scheduler:
-    _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
-    T_0: 10
-    T_mult: 2
-    eta_min: 0 # min value for the lr
+    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+    warmup_epochs: 1
+    max_epochs: ${train.trainer.max_epochs}
+    warmup_start_lr: 1e-6 #1e-6
+    eta_min: 0.0
     last_epoch: -1
-    verbose: False
+
 
   # optim.lr_scheduler.CosineAnnealingLR

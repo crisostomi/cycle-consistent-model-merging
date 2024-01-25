@@ -1,4 +1,1 @@
-{
-    "path": "storage/cycle-consistent-model-merging/hwjgjc7k/checkpoints/epoch=49-step=4900.ckpt",
-    "class": "ccmm.pl_modules.pl_module.MyLightningModule"
-}
+{"path": "storage/cycle-consistent-model-merging/8vk44gjq/checkpoints/epoch=51-step=26000.ckpt", "class": "ccmm.pl_modules.pl_module.MyLightningModule"}

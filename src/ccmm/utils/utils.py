@@ -343,6 +343,8 @@ def unravel_index(
 
 
 def to_relative_path(path: Path):
+    if not isinstance(path, Path):
+        path = Path(path)
     return str(path.relative_to(PROJECT_ROOT))
 
 
