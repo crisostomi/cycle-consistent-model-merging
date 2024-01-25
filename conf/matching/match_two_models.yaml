@@ -27,6 +27,6 @@ model_info_path: ${matching.output_path}/${dataset.name}/${model.model_identifie
 
 permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset.name}/${matching.matcher.name}/}
 results_path: ${path:${oc.env:PROJECT_ROOT}/results/${dataset.name}/${matching.matcher.name}/}
-plot_perm_history: False
+plot_perm_history: True
 
 use_factored_permutations: False

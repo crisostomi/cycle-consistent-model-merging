@@ -3,5 +3,5 @@ _target_: ccmm.matching.merger.FrankWolfeSynchronizedMerger
 name: 'frank_wolfe'
 permutation_spec: ??
 max_iter: 200
-average_in_universe: False
+average_in_universe: True
 initialization_method: 'sinkhorn' # 'sinkhorn', 'identity' or 'random'

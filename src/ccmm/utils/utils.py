@@ -152,10 +152,24 @@ def l2_norm_models(state_dict1, state_dict2):
     return torch.sqrt(diff_squared_sum)
 
 
-def average_models(model_params):
+def average_models(model_params, reduction="mean"):
     if not isinstance(model_params, List):
         model_params = list(model_params.values())
-    return {k: torch.mean(torch.stack([p[k] for p in model_params]), dim=0) for k in model_params[0].keys()}
+
+    if reduction == "mean":
+        return {k: torch.mean(torch.stack([p[k] for p in model_params]), dim=0) for k in model_params[0].keys()}
+    elif reduction == "median":
+        return {k: torch.median(torch.stack([p[k] for p in model_params]), dim=0)[0] for k in model_params[0].keys()}
+    elif reduction == "normal":
+        return {
+            k: torch.normal(
+                torch.mean(torch.stack([p[k] for p in model_params]), dim=0),
+                torch.std(torch.stack([p[k] for p in model_params]), dim=0),
+            )
+            for k in model_params[0].keys()
+        }
+    else:
+        raise ValueError(f"Invalid reduction {reduction}")
 
 
 def get_checkpoint_callback(callbacks):

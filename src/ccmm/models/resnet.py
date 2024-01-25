@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import reduce
 
+from ccmm.models.utils import LayerNorm2d
+
 pylogger = logging.getLogger(__name__)
 
 
@@ -74,20 +76,6 @@ def apply_modules(x, fs):
 #     def forward(self, x):
 
 #         return self.layer_norm(x)
-
-
-class LayerNorm2d(nn.Module):
-    def __init__(self, num_features):
-        super(LayerNorm2d, self).__init__()
-        self.layer_norm = nn.LayerNorm((num_features,))
-
-    def forward(self, x):
-        x = x.permute(0, 2, 3, 1)
-
-        x = self.layer_norm(x)
-
-        x = x.permute(0, 3, 1, 2)
-        return x
 
 
 class BlockGroup(nn.Module):

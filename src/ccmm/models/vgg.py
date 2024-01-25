@@ -1,5 +1,7 @@
-import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+from ccmm.models.utils import LayerNorm2d
 
 cfg = {
     "VGG11": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
@@ -10,16 +12,27 @@ cfg = {
 
 
 class VGG(nn.Module):
-    def __init__(self, vgg_name, num_classes):
+    def __init__(self, vgg_name, num_classes, classifier_width=512):
         super(VGG, self).__init__()
-        self.features = self._make_layers(cfg[vgg_name])
-        self.classifier = nn.Linear(512, num_classes)
+        self.embedder = self._make_layers(cfg[vgg_name])
+        self.classifier = nn.Sequential(
+            *[
+                nn.Linear(classifier_width, classifier_width),
+                nn.ReLU(inplace=True),
+                nn.Linear(classifier_width, classifier_width),
+                nn.ReLU(inplace=True),
+                nn.Linear(classifier_width, num_classes),
+            ]
+        )
 
     def forward(self, x):
-        out = self.features(x)
+        out = self.embedder(x)
+
         out = out.view(out.size(0), -1)
+
         out = self.classifier(out)
-        return out
+
+        return F.log_softmax(out, dim=-1)
 
     def _make_layers(self, cfg):
         layers = []
@@ -27,19 +40,14 @@ class VGG(nn.Module):
         for x in cfg:
             if x == "M":
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
-            else:
+            elif isinstance(x, int):
                 layers += [
                     nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
-                    nn.BatchNorm2d(x),
+                    LayerNorm2d(x),
                     nn.ReLU(inplace=True),
                 ]
                 in_channels = x
-        layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
+            else:
+                raise ValueError("Unknown layer type: {}".format(x))
+
         return nn.Sequential(*layers)
-
-
-def test():
-    net = VGG("VGG11")
-    x = torch.randn(2, 3, 32, 32)
-    y = net(x)
-    print(y.size())

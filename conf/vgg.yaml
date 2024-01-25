@@ -10,6 +10,7 @@ defaults:
   - hydra: default
   - nn: vgg
   - train: vgg
+  - dataset: cifar10
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblib

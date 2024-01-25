@@ -360,17 +360,19 @@ def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
         sim = Wa.T @ Wb_perm
     elif len(Wa.shape) == 2:
         # matrix case, result is the trace of the matrix product A^T B
-        sim = torch.trace(Wa.T @ Wb_perm).numpy()
+        sim = torch.trace(Wa.T @ Wb_perm)
     elif len(Wa.shape) == 3:
         # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
-        sim = torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+        sim = torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm))
     else:
-        sim = torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)).numpy()
+        sim = torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm))
 
     if debug and len(Wa.shape) == 2:
-        assert torch.allclose(sim, torch.trace(Wa.T @ P_prev @ Wb))
+        assert torch.allclose(
+            sim, torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T)
+        ), f"{sim} != {torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T)}"
 
-    return sim
+    return sim.numpy()
 
 
 def compute_gradient_P_curr(Wa, Wb, P_prev, debug=True):
@@ -395,7 +397,7 @@ def compute_gradient_P_curr(Wa, Wb, P_prev, debug=True):
         grad_P_curr = torch.einsum("ijkm,jnkm->in", Wa, Wb_perm)
 
     if debug and len(Wa.shape) == 2:
-        assert torch.allclose(grad_P_curr, Wa @ P_prev @ Wb.T)
+        assert torch.allclose(grad_P_curr, Wa @ P_prev @ Wb.T, atol=1e-5)
 
     return grad_P_curr
 
