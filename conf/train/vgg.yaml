@@ -33,8 +33,10 @@ callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
     save_top_k: 1
     verbose: False
-    monitor: ${train.monitor.metric}
+    monitor: null
     mode: ${train.monitor.mode}
+    every_n_epochs: 50
+    save_last: True
 
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     logging_interval: "step"
