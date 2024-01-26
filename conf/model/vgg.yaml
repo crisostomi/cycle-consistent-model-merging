@@ -1,0 +1,6 @@
+name: VGG
+number: 16
+model_identifier: ${model.name}${model.number}
+
+permutation_spec_builder:
+  _target_: ccmm.matching.permutation_spec.VGG16PermutationSpecBuilder

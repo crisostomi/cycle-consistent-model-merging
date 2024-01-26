@@ -1,7 +1,7 @@
 defaults:
   - matcher: frank_wolfe # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic, dummy, frank_wolfe
 
-seed_index: 0
+seed_index: 1
 
 output_path: ${oc.env:PROJECT_ROOT}/output
 dataset_path: ${oc.env:PROJECT_ROOT}/data
@@ -13,7 +13,7 @@ trainer:
 
 model_seeds:
   - 1
-  - 2
+  - 3
   # - 3
   # - 4
   # - 5
@@ -27,6 +27,6 @@ model_info_path: ${matching.output_path}/${dataset.name}/${model.model_identifie
 
 permutations_path: ${path:${oc.env:PROJECT_ROOT}/output/${dataset.name}/${matching.matcher.name}/}
 results_path: ${path:${oc.env:PROJECT_ROOT}/results/${dataset.name}/${matching.matcher.name}/}
-plot_perm_history: True
+plot_perm_history: False
 
 use_factored_permutations: False

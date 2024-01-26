@@ -11,7 +11,7 @@ from tqdm import tqdm
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_indices_to_perm_matrix
 from ccmm.matching.weight_matching import solve_linear_assignment_problem, weight_matching
-from ccmm.utils.utils import ModelParams
+from ccmm.utils.utils import ModelParams, to_np
 
 pylogger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ def frank_wolfe_weight_matching(
     max_iter=100,
     return_perm_history=False,
     num_trials=3,
+    device="cuda",
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -38,7 +39,10 @@ def frank_wolfe_weight_matching(
     # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+
+    # FOR VGG
+    ps.perm_to_layers_and_axes["P_final"] = [("classifier.4.weight", 0)]
 
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
     perm_sizes = collect_perm_sizes(ps, params_a)
@@ -80,11 +84,11 @@ def collect_perm_sizes(perm_spec, ref_params):
 
 
 def frank_wolfe_weight_matching_trial(
-    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100, device="cpu"
+    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100, device="cuda"
 ):
 
     perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(
-        perm_sizes, initialization_method, params_a, params_b, perm_spec
+        perm_sizes, initialization_method, params_a, params_b, perm_spec, device=device
     )
     perm_matrices_history = [perm_matrices]
 
@@ -239,7 +243,7 @@ def line_search_step(
     return -tot_obj
 
 
-def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_to_perms):
+def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_to_perms, device="cuda"):
 
     tot_obj = 0.0
 
@@ -248,17 +252,18 @@ def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_
         assert layer in params_b.keys()
 
         Wa, Wb = params_a[layer], params_b[layer]
+        Wa, Wb = Wa.to(device), Wb.to(device)
         if Wa.dim() == 1:
             Wa = Wa.unsqueeze(1)  # / torch.norm(Wa)
             Wb = Wb.unsqueeze(1)  # / torch.norm(Wb)
 
         row_perm_id = axes_and_perms[0]
         assert row_perm_id is None or row_perm_id in perm_matrices.keys()
-        row_perm = perm_matrices[row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0])
+        row_perm = perm_matrices[row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0], device=device)
 
         col_perm_id = axes_and_perms[1] if len(axes_and_perms) > 1 else None
         assert col_perm_id is None or col_perm_id in perm_matrices.keys()
-        col_perm = perm_matrices[col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1])
+        col_perm = perm_matrices[col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1], device=device)
 
         layer_similarity = compute_layer_similarity(Wa, Wb, row_perm, col_perm)
 
@@ -267,7 +272,7 @@ def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_
     return tot_obj
 
 
-def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_axes_to_perms, perm_sizes):
+def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_axes_to_perms, perm_sizes, device="cuda"):
     """
     Compute gradient of the weight matching objective function w.r.t. P_curr and P_prev.
     sim = <Wa_i, Pi Wb_i P_{i-1}^T>_f where f is the Frobenius norm, rewrite it as < A, xBy^T>_f where A = Wa_i, x = Pi, B = Wb_i, y = P_{i-1}
@@ -276,13 +281,14 @@ def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_ax
         grad_P_curr: Gradient of objective function w.r.t. P_curr.
         grad_P_prev: Gradient of objective function w.r.t. P_prev.
     """
-    gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p])) for p in perm_matrices.keys()}
+    gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p]), device=device) for p in perm_matrices.keys()}
 
     for layer, axes_and_perms in layers_and_axes_to_perms.items():
         assert layer in params_a.keys()
         assert layer in params_b.keys()
 
         Wa, Wb = params_a[layer], params_b[layer]
+        Wa, Wb = Wa.to(device), Wb.to(device)
         if Wa.dim() == 1:
             Wa = Wa.unsqueeze(1)  # / torch.norm(Wa)
             Wb = Wb.unsqueeze(1)  # / torch.norm(Wb)
@@ -290,12 +296,12 @@ def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_ax
         # any permutation acting on the first axis is permuting rows
         row_perm_id = axes_and_perms[0]
         assert row_perm_id is None or row_perm_id in perm_matrices.keys()
-        row_perm = perm_matrices[row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0])
+        row_perm = perm_matrices[row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0], device=device)
 
         # any permutation acting on the second axis is permuting columns
         col_perm_id = axes_and_perms[1] if len(axes_and_perms) > 1 else None
         assert col_perm_id is None or col_perm_id in perm_matrices.keys()
-        col_perm = perm_matrices[col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1])
+        col_perm = perm_matrices[col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1], device=device)
 
         grad_P_curr = compute_gradient_P_curr(Wa, Wb, col_perm)
         grad_P_prev = compute_gradient_P_prev(Wa, Wb, row_perm)
@@ -372,7 +378,7 @@ def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
             sim, torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T)
         ), f"{sim} != {torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T)}"
 
-    return sim.numpy()
+    return to_np(sim)
 
 
 def compute_gradient_P_curr(Wa, Wb, P_prev, debug=True):

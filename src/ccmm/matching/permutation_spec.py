@@ -187,47 +187,40 @@ class VGG16PermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self) -> None:
         pass
 
-    def create_permutation(self) -> PermutationSpec:
+    def create_permutation(self, model=None) -> PermutationSpec:
         layers_with_conv = [3, 7, 10, 14, 17, 20, 24, 27, 30, 34, 37, 40]
         layers_with_conv_b4 = [0, 3, 7, 10, 14, 17, 20, 24, 27, 30, 34, 37]
         layers_with_bn = [4, 8, 11, 15, 18, 21, 25, 28, 31, 35, 38, 41]
-        return self.permutation_spec_from_axes_to_perm(
-            {
-                # first features
-                "features.0.weight": ("P_Conv_0", None, None, None),
-                "features.1.weight": ("P_Conv_0", None),
-                "features.1.bias": ("P_Conv_0", None),
-                "features.1.running_mean": ("P_Conv_0", None),
-                "features.1.running_var": ("P_Conv_0", None),
-                "features.1.num_batches_tracked": (),
-                **{
-                    f"features.{layers_with_conv[i]}.weight": (
-                        f"P_Conv_{layers_with_conv[i]}",
-                        f"P_Conv_{layers_with_conv_b4[i]}",
-                        None,
-                        None,
-                    )
-                    for i in range(len(layers_with_conv))
-                },
-                **{f"features.{i}.bias": (f"P_Conv_{i}",) for i in layers_with_conv + [0]},
-                # bn
-                **{
-                    f"features.{layers_with_bn[i]}.weight": (f"P_Conv_{layers_with_conv[i]}", None)
-                    for i in range(len(layers_with_bn))
-                },
-                **{
-                    f"features.{layers_with_bn[i]}.bias": (f"P_Conv_{layers_with_conv[i]}", None)
-                    for i in range(len(layers_with_bn))
-                },
-                **{
-                    f"features.{layers_with_bn[i]}.running_mean": (f"P_Conv_{layers_with_conv[i]}", None)
-                    for i in range(len(layers_with_bn))
-                },
-                **{
-                    f"features.{layers_with_bn[i]}.running_var": (f"P_Conv_{layers_with_conv[i]}", None)
-                    for i in range(len(layers_with_bn))
-                },
-                **{f"features.{layers_with_bn[i]}.num_batches_tracked": () for i in range(len(layers_with_bn))},
-                **dense_layer_axes("classifier", p_rows="P_Dense_0", p_cols="P_Conv_40", bias=False),
-            }
-        )
+
+        axes_to_perm = {
+            # first features
+            "embedder.0.weight": ("P_Conv_0", None, None, None),
+            "embedder.0.bias": ("P_Conv_0", None),
+            "embedder.1.layer_norm.weight": ("P_Conv_0", None),
+            "embedder.1.layer_norm.bias": ("P_Conv_0", None),
+            **{
+                f"embedder.{layers_with_conv[i]}.weight": (
+                    f"P_Conv_{layers_with_conv[i]}",
+                    f"P_Conv_{layers_with_conv_b4[i]}",
+                    None,
+                    None,
+                )
+                for i in range(len(layers_with_conv))
+            },
+            **{f"embedder.{i}.bias": (f"P_Conv_{i}",) for i in layers_with_conv + [0]},
+            # bn
+            **{
+                f"embedder.{layers_with_bn[i]}.layer_norm.weight": (f"P_Conv_{layers_with_conv[i]}", None)
+                for i in range(len(layers_with_bn))
+            },
+            **{
+                f"embedder.{layers_with_bn[i]}.layer_norm.bias": (f"P_Conv_{layers_with_conv[i]}", None)
+                for i in range(len(layers_with_bn))
+            },
+            **dense_layer_axes("classifier.0", p_rows="P_Dense_0", p_cols="P_Conv_40", bias=True),
+            # skipping 1 and 3 as they are ReLUs
+            **dense_layer_axes("classifier.2", p_rows="P_Dense_1", p_cols="P_Dense_0", bias=True),
+            **dense_layer_axes("classifier.4", p_rows=None, p_cols="P_Dense_1", bias=True),
+        }
+
+        return self.permutation_spec_from_axes_to_perm(axes_to_perm)

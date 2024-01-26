@@ -18,8 +18,13 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 from nn_core.model_logging import NNLogger
 
-from ccmm.matching.utils import apply_permutation_to_statedict, get_all_symbols_combinations, restore_original_weights
-from ccmm.utils.utils import linear_interpolation, load_model_from_info, load_permutations, map_model_seed_to_symbol
+from ccmm.matching.utils import (
+    apply_permutation_to_statedict,
+    get_all_symbols_combinations,
+    load_permutations,
+    restore_original_weights,
+)
+from ccmm.utils.utils import linear_interpolate_state_dicts, load_model_from_info, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
 
@@ -141,7 +146,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
 
     for lam in tqdm(lambdas):
 
-        interpolated_params = linear_interpolation(lam, fixed_dict, permutee_dict)
+        interpolated_params = linear_interpolate_state_dicts(lam, fixed_dict, permutee_dict)
         permutee.model.load_state_dict(interpolated_params)
 
         train_results = trainer.test(permutee, train_loader)

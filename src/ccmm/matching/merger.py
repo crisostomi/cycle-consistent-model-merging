@@ -11,9 +11,10 @@ from ccmm.matching.utils import (
     get_all_symbols_combinations,
     perm_indices_to_perm_matrix,
     perm_matrix_to_perm_indices,
+    unfactor_permutations,
 )
 from ccmm.matching.weight_matching import PermutationSpec, weight_matching
-from ccmm.utils.utils import average_models, l2_norm_models, unfactor_permutations
+from ccmm.utils.utils import average_models, l2_norm_models
 
 pylogger = logging.getLogger(__name__)
 

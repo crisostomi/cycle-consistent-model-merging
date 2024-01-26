@@ -32,9 +32,11 @@ def run(cfg: DictConfig) -> str:
         map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in cfg.model_seeds
     }
 
+    ref_model = models["a"]
+
     # data structure that specifies the permutations acting on each layer and on what axis
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
-    permutation_spec = permutation_spec_builder.create_permutation()
+    permutation_spec = permutation_spec_builder.create_permutation(ref_model)
 
     ref_model = list(models.values())[0]
     assert set(permutation_spec.layer_and_axes_to_perm.keys()) == set(ref_model.model.state_dict().keys())

@@ -1,5 +1,6 @@
 import copy
 import itertools
+import json
 import logging
 from typing import Dict, List, Set, Tuple
 
@@ -10,6 +11,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor
 
 from ccmm.matching.permutation_spec import PermutationSpec
+from ccmm.utils.utils import to_np
 
 # shape (n, n), contains the permutation matrix, e.g. [[1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0]]
 PermutationMatrix = Tensor
@@ -172,7 +174,7 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
 
 def plot_permutation_history_animation(perm_history, cfg):
     def update(frame, ax, perm_history, perm_index):
-        perm = perm_history[frame][perm_index].numpy()
+        perm = to_np(perm_history[frame][perm_index])
         ax.imshow(perm, cmap="gray")
 
     for perm_index in perm_history[0].keys():
@@ -183,6 +185,50 @@ def plot_permutation_history_animation(perm_history, cfg):
         animation_path = cfg.permutations_path / f"animation_{perm_index}.mp4"
         ani.save(animation_path)
         plt.close(fig)
+
+
+def unfactor_permutations(permutations):
+    symbols = set(permutations.keys())
+
+    unfactored_permutations = {
+        symbol: {
+            permutee: {perm: None for perm in permutations[symbol].keys()} for permutee in symbols.difference(symbol)
+        }
+        for symbol in symbols
+    }
+    for symbol, perms in permutations.items():
+        for perm_name, perm in perms.items():
+            if perm is not None:
+                permutations[symbol][perm_name] = torch.tensor(perm)
+
+    combinations = get_all_symbols_combinations(symbols)
+    for fixed, permutee in combinations:
+        for perm in permutations[fixed].keys():
+            res = (
+                perm_indices_to_perm_matrix(permutations[fixed][perm])
+                @ perm_indices_to_perm_matrix(permutations[permutee][perm]).T
+            )
+
+            unfactored_permutations[fixed][permutee][perm] = perm_matrix_to_perm_indices(res)
+
+    return unfactored_permutations
+
+
+def load_permutations(path, factored=False):
+    with open(path, "r") as f:
+        permutations = json.load(f)
+
+    if factored:
+        return unfactor_permutations(permutations)
+
+    else:
+        for source, targets in permutations.items():
+            for target, source_target_perms in targets.items():
+                for perm_name, perm in source_target_perms.items():
+                    if perm is not None:
+                        permutations[source][target][perm_name] = torch.tensor(perm)
+
+        return permutations
 
 
 # def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):

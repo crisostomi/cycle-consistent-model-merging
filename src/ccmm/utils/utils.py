@@ -19,8 +19,6 @@ from scipy.misc import derivative
 from nn_core.common import PROJECT_ROOT
 from nn_core.serialization import load_model
 
-from ccmm.matching.utils import get_all_symbols_combinations, perm_indices_to_perm_matrix, perm_matrix_to_perm_indices
-
 ModelParams = Dict[str, torch.Tensor]
 
 
@@ -137,12 +135,13 @@ def plot_cumulative_density(neuron_dists, min_value, num_radii):
     plt.show()
 
 
-def linear_interpolation(lam, t1, t2):
+def linear_interpolate_state_dicts(lam, t1, t2):
     pylogger.info(f"Evaluating interpolated model with lambda: {lam}")
 
     t3 = copy.deepcopy(t2)
     for p in t1:
         t3[p] = (1 - lam) * t1[p] + lam * t2[p]
+
     return t3
 
 
@@ -244,50 +243,6 @@ def save_factored_permutations(permutations: Dict[str, Dict], path: str):
         json.dump(permutations, f)
 
 
-def load_permutations(path, factored=False):
-    with open(path, "r") as f:
-        permutations = json.load(f)
-
-    if factored:
-        return unfactor_permutations(permutations)
-
-    else:
-        for source, targets in permutations.items():
-            for target, source_target_perms in targets.items():
-                for perm_name, perm in source_target_perms.items():
-                    if perm is not None:
-                        permutations[source][target][perm_name] = torch.tensor(perm)
-
-        return permutations
-
-
-def unfactor_permutations(permutations):
-    symbols = set(permutations.keys())
-
-    unfactored_permutations = {
-        symbol: {
-            permutee: {perm: None for perm in permutations[symbol].keys()} for permutee in symbols.difference(symbol)
-        }
-        for symbol in symbols
-    }
-    for symbol, perms in permutations.items():
-        for perm_name, perm in perms.items():
-            if perm is not None:
-                permutations[symbol][perm_name] = torch.tensor(perm)
-
-    combinations = get_all_symbols_combinations(symbols)
-    for fixed, permutee in combinations:
-        for perm in permutations[fixed].keys():
-            res = (
-                perm_indices_to_perm_matrix(permutations[fixed][perm])
-                @ perm_indices_to_perm_matrix(permutations[permutee][perm]).T
-            )
-
-            unfactored_permutations[fixed][permutee][perm] = perm_matrix_to_perm_indices(res)
-
-    return unfactored_permutations
-
-
 class OnSaveCheckpointCallback(Callback):
     def on_save_checkpoint(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule, checkpoint: Dict[str, Any]
@@ -371,3 +326,32 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
         "trunc({n},{a:.2f},{b:.2f})".format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, n)),
     )
+
+
+def fuse_batch_norm_into_conv(conv, bn):
+    """
+    Fuses a batchnorm layer into a convolutional layer by updating the weights and bias of the convolutional layer.
+    Code from https://github.com/KellerJordan/REPAIR
+    """
+
+    fused = torch.nn.Conv2d(
+        conv.in_channels,
+        conv.out_channels,
+        kernel_size=conv.kernel_size,
+        stride=conv.stride,
+        padding=conv.padding,
+        bias=True,
+    )
+
+    # setting weights
+    w_conv = conv.weight.clone()
+    bn_std = (bn.eps + bn.running_var).sqrt()
+    gamma = bn.weight / bn_std
+    fused.weight.data = w_conv * gamma.reshape(-1, 1, 1, 1)
+
+    # setting bias
+    b_conv = conv.bias if conv.bias is not None else torch.zeros_like(bn.bias)
+    beta = bn.bias + gamma * (-bn.running_mean + b_conv)
+    fused.bias.data = beta
+
+    return fused
