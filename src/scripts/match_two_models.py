@@ -39,8 +39,6 @@ def run(cfg: DictConfig) -> str:
         map_model_seed_to_symbol(seed): load_model_from_artifact(run, artifact_path(seed)) for seed in cfg.model_seeds
     }
 
-    ref_model = models["a"]
-
     # data structure that specifies the permutations acting on each layer and on what axis
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
     permutation_spec = permutation_spec_builder.create_permutation()

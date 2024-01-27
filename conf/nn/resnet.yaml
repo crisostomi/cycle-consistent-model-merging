@@ -26,7 +26,7 @@ module:
   model:
     _target_: ccmm.models.resnet.ResNet
     depth: 22 # 22 or 50
-    num_classes: 10
+    num_classes: ${dataset.num_classes}
     widen_factor: 8 # 2, 4, 16, 32 by git re-basin
 
   optimizer:

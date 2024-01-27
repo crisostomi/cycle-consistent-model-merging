@@ -1,16 +1,16 @@
 data_path: ${oc.env:PROJECT_ROOT}/data
-name: CIFAR10
-num_classes: 10
+name: CIFAR100
+num_classes: 100
 
 train:
-  _target_: torchvision.datasets.CIFAR10
+  _target_: torchvision.datasets.CIFAR100
   root: ${dataset.data_path}
   train: True
   download: True
   transform: ${dataset.train_transform}
 
 test:
-  _target_: torchvision.datasets.CIFAR10
+  _target_: torchvision.datasets.CIFAR100
   root: ${dataset.data_path}
   train: False
   download: True

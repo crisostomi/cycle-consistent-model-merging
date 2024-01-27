@@ -30,12 +30,14 @@ pylogger = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig) -> str:
-    core_cfg = cfg
+    core_cfg = copy.deepcopy(cfg)
     cfg = cfg.matching
 
     seed_index_everything(cfg)
 
-    run = wandb.init(project=core_cfg.core.project_name, entity=core_cfg.core.entity, job_type="matching")
+    template_core: NNTemplateCore = NNTemplateCore(
+        restore_cfg=None,
+    )
 
     # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
@@ -50,25 +52,9 @@ def run(cfg: DictConfig) -> str:
     # (a, b), (a, c), (b, c), ...
     all_combinations = get_all_symbols_combinations(symbols)
 
-    # models: Dict[str, LightningModule] = {
-    #     map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in model_seeds
-    # }
     artifact_path = (
         lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
     )
-
-    # {a: model_a, b: model_b, c: model_c, ..}
-    models: Dict[str, LightningModule] = {
-        map_model_seed_to_symbol(seed): load_model_from_artifact(run, artifact_path(seed)) for seed in cfg.model_seeds
-    }
-
-    template_core: NNTemplateCore = NNTemplateCore(
-        restore_cfg=None,
-    )
-
-    logger: NNLogger = NNLogger(logging_cfg=core_cfg.logging, cfg=core_cfg, resume_id=template_core.resume_id)
-
-    model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
     updated_params = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
@@ -79,28 +65,41 @@ def run(cfg: DictConfig) -> str:
         cfg.permutations_path / "permutations.json", factored=cfg.use_factored_permutations
     )
 
-    for fixed, permutee in all_combinations:
+    # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
+
+    canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
+
+    for fixed, permutee in canonical_combinations:
+        pylogger.info(f"Permuting model {permutee} into {fixed}.")
+
+        cfg.model_seeds = [symbols_to_seed[fixed], symbols_to_seed[permutee]]
+
+        logger: NNLogger = NNLogger(logging_cfg=core_cfg.logging, cfg=core_cfg, resume_id=template_core.resume_id)
+
+        # {a: model_a, b: model_b, c: model_c, ..}
+        models: Dict[str, LightningModule] = {
+            map_model_seed_to_symbol(seed): load_model_from_artifact(logger.experiment, artifact_path(seed))
+            for seed in cfg.model_seeds
+        }
+
+        model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
+
         # perms[a, b] maps b -> a
         updated_params[fixed][permutee] = apply_permutation_to_statedict(
             permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )
         restore_original_weights(models, model_orig_weights)
 
-    transform = instantiate(core_cfg.dataset.test.transform)
+        transform = instantiate(core_cfg.dataset.test.transform)
 
-    train_dataset = instantiate(core_cfg.dataset.train, transform=transform)
-    test_dataset = instantiate(core_cfg.dataset.test, transform=transform)
+        train_dataset = instantiate(core_cfg.dataset.train, transform=transform)
+        test_dataset = instantiate(core_cfg.dataset.test, transform=transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+        train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+        test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
 
-    lambdas = np.linspace(0, 1, num=cfg.num_interpolation_steps)
+        lambdas = np.linspace(0, 1, num=cfg.num_interpolation_steps)
 
-    # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
-    canonical_combinations = [(fixed, permutee) for (fixed, permutee) in all_combinations if fixed < permutee]
-
-    all_results = {}
-    for fixed, permutee in canonical_combinations:
         restore_original_weights(models, model_orig_weights)
         results = evaluate_pair_of_models(
             models,
@@ -113,13 +112,12 @@ def run(cfg: DictConfig) -> str:
             core_cfg,
             logger,
         )
-        all_results[(fixed, permutee)] = results
 
-    log_results(all_results, lambdas)
+        log_results(results, lambdas)
 
-    if logger is not None:
-        logger.log_configuration(model=list(models.values())[0], cfg=core_cfg)
-        logger.experiment.finish()
+        if logger is not None:
+            logger.log_configuration(model=list(models.values())[0], cfg=core_cfg)
+            logger.experiment.finish()
 
     return logger.run_dir
 
@@ -182,27 +180,11 @@ def log_results(results, lambdas):
 
     for metric in ["acc", "loss"]:
         for mode in ["train", "test"]:
-            # all combinations (a, b), (a, c) ..
-            combinations = list(results.keys())
-
-            ys = [results[comb][f"{mode}_{metric}"] for comb in combinations]
-            comb_labels = [f"{comb[1]}->{comb[0]}" for comb in combinations]
-            wandb.log(
-                {
-                    f"{mode}_{metric}_interpolations": wandb.plot.line_series(
-                        xs=lambdas, ys=ys, keys=comb_labels, title=f"Interpolated {mode} {metric}"
-                    )
-                }
-            )
+            for step, lam in enumerate(lambdas):
+                wandb.log({f"{mode}_{metric}": results[f"{mode}_{metric}"][step], "lambda": lam})
 
     for mode in ["train", "test"]:
-
-        barriers = [results[comb][f"{mode}_loss_barrier"] for comb in combinations]
-        data = [[label, val] for (label, val) in zip(comb_labels, barriers)]
-        table = wandb.Table(data=data, columns=["combination", "barrier"])
-        wandb.log(
-            {f"{mode}_loss_barrier": wandb.plot.bar(table, "combination", "barrier", title=f"Loss barrier for {mode}")}
-        )
+        wandb.log({f"{mode}_loss_barrier": results[f"{mode}_loss_barrier"]})
 
 
 def compute_loss_barrier(losses):

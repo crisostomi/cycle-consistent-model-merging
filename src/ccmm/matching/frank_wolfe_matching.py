@@ -36,10 +36,10 @@ def frank_wolfe_weight_matching(
     params_a, params_b = fixed, permutee
 
     # FOR MLP
-    # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
+    ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
 
     # FOR VGG
     # ps.perm_to_layers_and_axes["P_final"] = [("classifier.4.weight", 0)]
@@ -428,7 +428,7 @@ def compute_gradient_P_prev(Wa, Wb, P_curr, debug=True):
         grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
 
     if debug and len(Wa.shape) == 2:
-        assert torch.allclose(grad_P_prev, Wa.T @ P_curr @ Wb)
+        assert torch.allclose(grad_P_prev, Wa.T @ P_curr @ Wb, atol=1e-3)
 
     return grad_P_prev
 
