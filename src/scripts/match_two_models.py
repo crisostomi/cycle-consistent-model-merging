@@ -30,10 +30,6 @@ def run(cfg: DictConfig) -> str:
     # {a: 1, b: 2, c: 3, ..}
     symbols_to_seed: Dict[int, str] = {map_model_seed_to_symbol(seed): seed for seed in cfg.model_seeds}
 
-    # models: Dict[str, LightningModule] = {
-    #     map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in cfg.model_seeds
-    # }
-
     artifact_path = (
         lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
     )

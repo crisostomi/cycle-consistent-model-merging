@@ -4,6 +4,7 @@ from typing import Dict
 import hydra
 import omegaconf
 import torch  # noqa
+import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning import LightningModule
@@ -13,7 +14,7 @@ from nn_core.common.utils import seed_index_everything
 
 import ccmm  # noqa
 from ccmm.matching.utils import get_all_symbols_combinations, plot_permutation_history_animation
-from ccmm.utils.utils import load_model_from_info, map_model_seed_to_symbol, save_factored_permutations
+from ccmm.utils.utils import load_model_from_artifact, map_model_seed_to_symbol, save_factored_permutations
 
 pylogger = logging.getLogger(__name__)
 
@@ -27,8 +28,15 @@ def run(cfg: DictConfig) -> str:
     # {a: 1, b: 2, c: 3, ..}
     symbols_to_seed: Dict[int, str] = {map_model_seed_to_symbol(seed): seed for seed in cfg.model_seeds}
 
+    run = wandb.init(project=core_cfg.core.project_name, entity=core_cfg.core.entity, job_type="matching")
+
+    artifact_path = (
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
+    )
+
+    # {a: model_a, b: model_b, c: model_c, ..}
     models: Dict[str, LightningModule] = {
-        map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in cfg.model_seeds
+        map_model_seed_to_symbol(seed): load_model_from_artifact(run, artifact_path(seed)) for seed in cfg.model_seeds
     }
 
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
