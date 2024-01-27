@@ -39,10 +39,10 @@ def frank_wolfe_weight_matching(
     # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
 
     # FOR VGG
-    ps.perm_to_layers_and_axes["P_final"] = [("classifier.4.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_final"] = [("classifier.4.weight", 0)]
 
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
     perm_sizes = collect_perm_sizes(ps, params_a)

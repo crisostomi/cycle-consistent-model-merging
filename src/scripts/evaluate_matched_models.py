@@ -24,7 +24,7 @@ from ccmm.matching.utils import (
     load_permutations,
     restore_original_weights,
 )
-from ccmm.utils.utils import linear_interpolate_state_dicts, load_model_from_info, map_model_seed_to_symbol
+from ccmm.utils.utils import linear_interpolate_state_dicts, load_model_from_artifact, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
 
@@ -34,6 +34,8 @@ def run(cfg: DictConfig) -> str:
     cfg = cfg.matching
 
     seed_index_everything(cfg)
+
+    run = wandb.init(project=core_cfg.core.project_name, entity=core_cfg.core.entity, job_type="matching")
 
     # [1, 2, 3, ..]
     model_seeds = cfg.model_seeds
@@ -48,8 +50,16 @@ def run(cfg: DictConfig) -> str:
     # (a, b), (a, c), (b, c), ...
     all_combinations = get_all_symbols_combinations(symbols)
 
+    # models: Dict[str, LightningModule] = {
+    #     map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in model_seeds
+    # }
+    artifact_path = (
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
+    )
+
+    # {a: model_a, b: model_b, c: model_c, ..}
     models: Dict[str, LightningModule] = {
-        map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in model_seeds
+        map_model_seed_to_symbol(seed): load_model_from_artifact(run, artifact_path(seed)) for seed in cfg.model_seeds
     }
 
     template_core: NNTemplateCore = NNTemplateCore(

@@ -1,7 +1,7 @@
 name: ResNet
 widen_factor: 16
 depth: 22
-model_identifier: ${model.name}_${model.depth}_${model.widen_factor}
+model_identifier: ${model.name}${model.depth}_${model.widen_factor}
 
 permutation_spec_builder:
   _target_: ccmm.matching.permutation_spec.ResNet20PermutationSpecBuilder

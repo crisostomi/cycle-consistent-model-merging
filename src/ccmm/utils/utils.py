@@ -19,6 +19,8 @@ from scipy.misc import derivative
 from nn_core.common import PROJECT_ROOT
 from nn_core.serialization import load_model
 
+from ccmm.pl_modules.pl_module import MyLightningModule
+
 ModelParams = Dict[str, torch.Tensor]
 
 
@@ -209,6 +211,16 @@ def load_model_from_info(model_info_path, seed=None, zipped=True):
 
     suffix = ".zip" if zipped else ""
     model = load_model(model_class, checkpoint_path=Path(str(PROJECT_ROOT) + "/" + model_info["path"] + suffix))
+    model.eval()
+
+    return model
+
+
+def load_model_from_artifact(run, artifact_path):
+    artifact = run.use_artifact(artifact_path)
+    artifact.download()
+
+    model = load_model(MyLightningModule, checkpoint_path=Path(artifact.file()))
     model.eval()
 
     return model
