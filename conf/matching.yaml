@@ -1,6 +1,6 @@
 core:
   project_name: cycle-consistent-model-merging
-  entity: crisostomi
+  entity: gladia
   storage_dir: ${oc.env:PROJECT_ROOT}/storage
   version: 0.0.1
   tags:
@@ -28,7 +28,7 @@ logging:
     _target_: pytorch_lightning.loggers.WandbLogger
 
     project: ${core.project_name}
-    entity: null
+    entity: gladia
     log_model: ${..upload.run_files}
     mode: 'online'
     tags: ${core.tags}
