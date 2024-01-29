@@ -24,6 +24,16 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": false,
-        }
+        },
+        {
+            "name": "match two models",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/scripts/match_two_models.py",
+            "console": "integratedTerminal",
+            "env": {"HYDRA_FULL_ERROR": "1"},
+            "justMyCode": false,
+            "args": []
+        },
     ]
 }

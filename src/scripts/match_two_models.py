@@ -57,7 +57,7 @@ def run(cfg: DictConfig) -> str:
 
     matcher = instantiate(cfg.matcher, permutation_spec=permutation_spec)
     permutations[fixed_symbol][permutee_symbol], perm_history = matcher(
-        fixed=flatten_params(fixed_model.model), permutee=flatten_params(permutee_model.model)
+        fixed=fixed_model.model, permutee=permutee_model.model
     )
 
     permutations[permutee_symbol][fixed_symbol] = get_inverse_permutations(permutations[fixed_symbol][permutee_symbol])

@@ -84,7 +84,7 @@ def run(cfg: DictConfig) -> str:
 
         model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
-        # perms[a, b] maps b -> a
+        # perms[a, b] maps b -> a  
         updated_params[fixed][permutee] = apply_permutation_to_statedict(
             permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )

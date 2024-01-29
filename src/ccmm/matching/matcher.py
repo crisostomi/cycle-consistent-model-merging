@@ -6,6 +6,7 @@ from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.quadratic_matching import quadratic_weight_matching
 from ccmm.matching.synchronized_matching import synchronized_weight_matching
 from ccmm.matching.weight_matching import LayerIterationOrder, weight_matching
+from ccmm.matching.sinkhorn_matching import sinkhorn_matching
 
 
 class Matcher:
@@ -166,6 +167,37 @@ class FrankWolfeSynchronizedMatcher(Matcher):
             combinations=combinations,
             max_iter=self.max_iter,
             initialization_method=self.initialization_method,
+            verbose=self.verbose,
+        )
+
+        return permutation_indices, None
+
+
+class SinkhornMatcher(Matcher):
+
+    def __init__(
+        self,
+        name,
+        permutation_spec: PermutationSpec,
+        example_input_shape,
+        lr,
+        max_iter=100,
+        verbose=False,
+    ):
+        super().__init__(name, permutation_spec)
+        self.max_iter = max_iter
+        self.verbose = verbose
+        self.example_input_shape = tuple(example_input_shape)
+        self.lr = lr
+
+    def __call__(self, fixed, permutee):
+        permutation_indices, _ = sinkhorn_matching(
+            fixed=fixed,
+            permutee=permutee,
+            perm_spec=self.permutation_spec,
+            lr=self.lr,
+            example_input_shape=self.example_input_shape,
+            max_iter=self.max_iter,
             verbose=self.verbose,
         )
 
