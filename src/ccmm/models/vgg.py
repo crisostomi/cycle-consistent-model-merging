@@ -12,8 +12,9 @@ cfg = {
 
 
 class VGG(nn.Module):
-    def __init__(self, vgg_name, num_classes, classifier_width=512):
+    def __init__(self, vgg_name, num_classes, classifier_width=512, in_channels=3):
         super(VGG, self).__init__()
+        self.in_channels = in_channels
         self.embedder = self._make_layers(cfg[vgg_name])
         self.classifier = nn.Sequential(
             *[
@@ -36,7 +37,7 @@ class VGG(nn.Module):
 
     def _make_layers(self, cfg):
         layers = []
-        in_channels = 3
+        in_channels = self.in_channels
         for x in cfg:
             if x == "M":
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]

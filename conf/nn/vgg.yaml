@@ -24,6 +24,7 @@ module:
   model:
     _target_: ccmm.models.vgg.VGG
     vgg_name: VGG16
+    in_channels: ${dataset.in_channels}
 
   optimizer:
     _target_: torch.optim.SGD

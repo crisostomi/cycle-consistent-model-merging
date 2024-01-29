@@ -17,3 +17,16 @@ class LayerNorm2d(nn.Module):
 
         x = x.permute(0, 3, 1, 2)
         return x
+
+
+class BatchNorm2d(nn.Module):
+    """
+    Just a quirky wrapper around BatchNorm to have the same PermutationSpec as LayerNorm2d. (Should be fixed in the future)
+    """
+
+    def __init__(self, num_features):
+        super().__init__()
+        self.layer_norm = nn.BatchNorm2d(num_features)
+
+    def forward(self, x):
+        return self.layer_norm(x)

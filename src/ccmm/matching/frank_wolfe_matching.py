@@ -36,10 +36,10 @@ def frank_wolfe_weight_matching(
     params_a, params_b = fixed, permutee
 
     # FOR MLP
-    ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
 
     # FOR VGG
     # ps.perm_to_layers_and_axes["P_final"] = [("classifier.4.weight", 0)]

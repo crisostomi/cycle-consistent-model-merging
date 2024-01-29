@@ -2,6 +2,7 @@
 data_path: ${oc.env:PROJECT_ROOT}/data
 name: MNIST
 num_classes: 10
+in_channels: 1
 
 train:
   _target_: torchvision.datasets.MNIST

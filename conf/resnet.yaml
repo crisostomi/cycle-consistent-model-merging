@@ -4,13 +4,16 @@ core:
   storage_dir: ${oc.env:PROJECT_ROOT}/storage
   version: 0.0.1
   tags:
-    - dev
+    - train
+    - resnet
+    - 2x
+    - batch_norm
 
 defaults:
   - hydra: default
   - nn: resnet
   - train: resnet
-  - dataset: cifar100
+  - dataset: cifar10
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblib
