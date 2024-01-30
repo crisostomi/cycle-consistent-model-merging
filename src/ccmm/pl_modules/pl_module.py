@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 import hydra
 import omegaconf
@@ -21,22 +21,24 @@ pylogger = logging.getLogger(__name__)
 class MyLightningModule(pl.LightningModule):
     logger: NNLogger
 
-    def __init__(self, model, metadata: Optional[MetaData] = None, *args, **kwargs) -> None:
+    def __init__(self, model, metadata: Optional[MetaData] = None, num_classes: int = None, *args, **kwargs) -> None:
         super().__init__()
 
+        assert metadata is not None or num_classes is not None, "Either metadata or num_classes must be provided"
         # Populate self.hparams with args and kwargs automagically!
         # We want to skip metadata since it is saved separately by the NNCheckpointIO object.
         # Be careful when modifying this instruction. If in doubt, don't do it :]
         self.save_hyperparameters(logger=False, ignore=("metadata",))
 
         self.metadata = metadata
+        self.num_classes = num_classes if num_classes else len(metadata.class_vocab)
 
         metric = torchmetrics.Accuracy()
         self.train_accuracy = metric.clone()
         self.val_accuracy = metric.clone()
         self.test_accuracy = metric.clone()
 
-        self.model = instantiate(model, num_classes=len(metadata.class_vocab))
+        self.model = instantiate(model, num_classes=self.num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Method for the forward pass.
@@ -47,18 +49,26 @@ class MyLightningModule(pl.LightningModule):
         Returns:
             output_dict: forward output containing the predictions (output logits ecc...) and the loss if any.
         """
-        # example
         return self.model(x)
 
+    def unwrap_batch(self, batch):
+        if isinstance(batch, Dict):
+            x, y = batch["x"], batch["y"]
+        else:
+            x, y = batch
+        return x, y
+
     def step(self, x, y) -> Mapping[str, Any]:
+
         logits = self(x)
         loss = F.cross_entropy(logits, y)
+
         return {"logits": logits.detach(), "loss": loss}
 
     def training_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        x, y = batch
-        step_out = self.step(x, y)
+        x, y = self.unwrap_batch(batch)
 
+        step_out = self.step(x, y)
         self.log_dict(
             {"loss/train": step_out["loss"].cpu().detach()},
             on_step=True,
@@ -77,7 +87,8 @@ class MyLightningModule(pl.LightningModule):
         return step_out
 
     def validation_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        x, y = batch
+        x, y = self.unwrap_batch(batch)
+
         step_out = self.step(x, y)
 
         self.log_dict(
@@ -98,7 +109,8 @@ class MyLightningModule(pl.LightningModule):
         return step_out
 
     def test_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
-        x, y = batch
+        x, y = self.unwrap_batch(batch)
+
         step_out = self.step(x, y)
 
         self.log_dict(
