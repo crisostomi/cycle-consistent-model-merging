@@ -1,5 +1,7 @@
 import torch
 
+from typing import Literal
+
 from ccmm.matching.frank_wolfe_matching import frank_wolfe_weight_matching
 from ccmm.matching.frank_wolfe_sync_matching import frank_wolfe_synchronized_matching
 from ccmm.matching.permutation_spec import PermutationSpec
@@ -181,6 +183,7 @@ class SinkhornMatcher(Matcher):
         permutation_spec: PermutationSpec,
         example_input_shape,
         lr,
+        criterion: Literal['L1', 'L2'] = 'L2',
         max_iter=100,
         verbose=False,
     ):
@@ -189,6 +192,7 @@ class SinkhornMatcher(Matcher):
         self.verbose = verbose
         self.example_input_shape = tuple(example_input_shape)
         self.lr = lr
+        self.criterion = criterion
 
     def __call__(self, fixed, permutee):
         permutation_indices, _ = sinkhorn_matching(
@@ -197,6 +201,7 @@ class SinkhornMatcher(Matcher):
             perm_spec=self.permutation_spec,
             lr=self.lr,
             example_input_shape=self.example_input_shape,
+            criterion=self.criterion,
             max_iter=self.max_iter,
             verbose=self.verbose,
         )
