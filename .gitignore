@@ -229,3 +229,4 @@ multirun/
 /lightning_logs/
 ```
 **/artifacts/**
+doctest-output/

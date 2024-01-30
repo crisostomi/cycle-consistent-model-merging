@@ -1,0 +1,9 @@
+name: "cifar100"
+ref: "cifar100"
+train_split: train
+test_split: test
+label_key: fine_label
+image_key: img
+num_classes: 100
+num_train_samples_per_class: 500
+num_test_samples_per_class: 100

@@ -367,3 +367,16 @@ def fuse_batch_norm_into_conv(conv, bn):
     fused.bias.data = beta
 
     return fused
+
+
+class ConvertToRGB:
+    def __call__(self, image):
+        convert_to_rgb(image)
+
+
+def convert_to_rgb(image):
+    if image.mode != "RGB":
+        return image.convert("RGB")
+
+    # return np.array(image)
+    return image

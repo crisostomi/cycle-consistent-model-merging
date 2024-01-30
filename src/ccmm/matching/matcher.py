@@ -6,9 +6,9 @@ from ccmm.matching.frank_wolfe_matching import frank_wolfe_weight_matching
 from ccmm.matching.frank_wolfe_sync_matching import frank_wolfe_synchronized_matching
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.quadratic_matching import quadratic_weight_matching
+from ccmm.matching.sinkhorn_matching import sinkhorn_matching
 from ccmm.matching.synchronized_matching import synchronized_weight_matching
 from ccmm.matching.weight_matching import LayerIterationOrder, weight_matching
-from ccmm.matching.sinkhorn_matching import sinkhorn_matching
 
 
 class Matcher:
@@ -25,6 +25,8 @@ class DummyMatcher(Matcher):
         super().__init__(name, permutation_spec)
 
     def __call__(self, fixed, permutee):
+        fixed = fixed.state_dict()
+
         perm_sizes = {
             p: fixed[params_and_axes[0][0]].shape[params_and_axes[0][1]]
             for p, params_and_axes in self.permutation_spec.perm_to_layers_and_axes.items()
@@ -50,8 +52,8 @@ class GitRebasinMatcher(Matcher):
     def __call__(self, fixed, permutee):
         permutation_indices = weight_matching(
             ps=self.permutation_spec,
-            fixed=fixed,
-            permutee=permutee,
+            fixed=fixed.state_dict(),
+            permutee=permutee.state_dict(),
             max_iter=self.max_iter,
             layer_iteration_order=self.layer_iteration_order,
         )
@@ -68,8 +70,8 @@ class QuadraticMatcher(Matcher):
     def __call__(self, fixed, permutee):
         permutation_indices = quadratic_weight_matching(
             ps=self.permutation_spec,
-            fixed=fixed,
-            permutee=permutee,
+            fixed=fixed.state_dict(),
+            permutee=permutee.state_dict(),
             max_iter=self.max_iter,
             alternate_diffusion_params=self.alternate_diffusion_params,
         )
@@ -86,8 +88,8 @@ class AlternatingDiffusionMatcher(Matcher):
     def __call__(self, fixed, permutee):
         permutation_indices = weight_matching(
             ps=self.permutation_spec,
-            fixed=fixed,
-            permutee=permutee,
+            fixed=fixed.state_dict(),
+            permutee=permutee.state_dict(),
             max_iter=self.max_iter,
             alternate_diffusion_params=self.alternate_diffusion_params,
         )
@@ -133,8 +135,8 @@ class FrankWolfeMatcher(Matcher):
     def __call__(self, fixed, permutee):
         permutation_indices, perm_history = frank_wolfe_weight_matching(
             ps=self.permutation_spec,
-            fixed=fixed,
-            permutee=permutee,
+            fixed=fixed.state_dict(),
+            permutee=permutee.state_dict(),
             max_iter=self.max_iter,
             num_trials=self.num_trials,
             return_perm_history=self.return_perm_history,
@@ -176,7 +178,6 @@ class FrankWolfeSynchronizedMatcher(Matcher):
 
 
 class SinkhornMatcher(Matcher):
-
     def __init__(
         self,
         name,
