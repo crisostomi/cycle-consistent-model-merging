@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 import torch
 import torch.nn as nn
 from copy import deepcopy
+from typing import Literal
 
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
@@ -443,6 +444,7 @@ def sinkhorn_matching(
     perm_spec: PermutationSpec,
     max_iter: int,
     example_input_shape: List[int],
+    criterion: Literal['L1', 'L2'] = 'L2',
     lr: float=0.1,
     device="cuda",
     verbose=False,
@@ -451,17 +453,17 @@ def sinkhorn_matching(
     Weight matching via optimal transport 
     """
 
-    modelA = fixed
+    modelA = fixed.to(device)
     # we set the permutation matrices to be the
-    modelB = permutee
-    pi_modelB = RebasinNet(modelB, perm_spec, input_shape=example_input_shape)
+    modelB = permutee.to(device)
+    pi_modelB = RebasinNet(modelB, perm_spec, input_shape=example_input_shape).to(device)
     pi_modelB.identity_init()
     pi_modelB.train()
 
     pylogger.info(f"Check if permutation matrices are initialized to I:")
-    pylogger.info(((pi_modelB.p[0].data - torch.eye(pi_modelB.p[0].shape[0])) ** 2).sum())
+    pylogger.info(torch.allclose(pi_modelB.p[0].data, torch.eye(pi_modelB.p[0].shape[0], device=device)))
     # distance loss
-    criterion = DistL2Loss(modelA)
+    criterion = globals()['Dist{}Loss'.format(criterion)](modelA)
 
     # optimizer for rebasin network
     optimizer = torch.optim.AdamW(pi_modelB.p.parameters(), lr=lr)

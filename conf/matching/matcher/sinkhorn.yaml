@@ -7,4 +7,5 @@ example_input_shape:
  - 3
  - 32
  - 32
-lr: 0.1
+lr: 10.1
+criterion: L1
