@@ -138,7 +138,7 @@ def synchronize_permutations(permutations: Dict[str, Dict[str, PermutationIndice
     return sync_permutations
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

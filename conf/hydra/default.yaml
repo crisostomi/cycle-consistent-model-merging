@@ -10,6 +10,7 @@ sweep:
 output_subdir: null
 
 job:
+  chdir: True
   env_set:
     WANDB_START_METHOD: thread
     WANDB_DIR: ${oc.env:PROJECT_ROOT}

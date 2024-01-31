@@ -123,7 +123,7 @@ def repair_model(model_to_repair, models, train_loader):
         repaired_model_correct_class.load_state_dict(repaired_model.model.state_dict())
 
         model_to_repair.model = repaired_model_correct_class
-        repaired_model.hparams["model"]["_target_"] = "ccmm.models.repaired_resnet.RepairedResNet"
+        model_to_repair.hparams["model"]["_target_"] = "ccmm.models.repaired_resnet.RepairedResNet"
 
         return model_to_repair
 

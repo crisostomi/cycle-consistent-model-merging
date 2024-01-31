@@ -168,7 +168,7 @@ def is_zero(remaining_percentage):
     return abs(remaining_percentage - 0.0) < 1e-6
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="split_data_in_tasks")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="split_data_in_tasks", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

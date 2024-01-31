@@ -35,7 +35,7 @@ def run(cfg: DictConfig) -> str:
     run = wandb.init(project=core_cfg.core.project_name, entity=core_cfg.core.entity, job_type="matching")
 
     artifact_path = (
-        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:latest"
     )
 
     # {a: model_a, b: model_b, c: model_c, ..}
@@ -99,7 +99,7 @@ def upload_model_to_wandb(merged_model: LightningModule, run, cfg: DictConfig, s
     os.remove(temp_path + ".zip")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="merge_n_models")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="merge_n_models", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

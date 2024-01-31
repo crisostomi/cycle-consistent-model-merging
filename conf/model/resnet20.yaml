@@ -1,9 +1,9 @@
 name: ResNet
-widen_factor: 2
+widen_factor: 8
 depth: 22
 num_classes: ${dataset.num_classes}
 
-model_identifier: ${model.name}${model.depth}_${model.widen_factor}  # _bn
+model_identifier: ${model.name}${model.depth}_${model.widen_factor}_cifar100 #_bn
 
 permutation_spec_builder:
   _target_: ccmm.matching.permutation_spec.ResNet20PermutationSpecBuilder
