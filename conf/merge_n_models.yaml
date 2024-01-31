@@ -1,5 +1,6 @@
 core:
   project_name: cycle-consistent-model-merging
+  entity: gladia
   storage_dir: ${oc.env:PROJECT_ROOT}/storage
   version: 0.0.1
   tags:
@@ -9,7 +10,7 @@ defaults:
   - hydra: default
   - matching: merge_n_models # match_then_sync
   - dataset: cifar10 # cifar10, mnist
-  - model: vgg # mlp, resnet20, vgg
+  - model: resnet20 # mlp, resnet20, vgg
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs

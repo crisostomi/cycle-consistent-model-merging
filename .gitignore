@@ -230,3 +230,4 @@ multirun/
 ```
 **/artifacts/**
 doctest-output/
+tmp/

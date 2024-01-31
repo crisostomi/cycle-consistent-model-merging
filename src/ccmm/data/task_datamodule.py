@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import List, Mapping, Optional, Union
 
 import pytorch_lightning as pl
-from datasets import concatenate_datasets
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
@@ -193,8 +192,6 @@ class MyDataModule(pl.LightningDataModule):
             # test_dataloader = self.test_dataloader()
             # return test_dataloader[0] if isinstance(test_dataloader, list) else test_dataloader
             return self.test_dataloader()
-        elif mode == "anchors":
-            return self.anchor_dataloader()
         else:
             raise ValueError(f"Mode {mode} not supported")
 
@@ -207,7 +204,6 @@ class SameClassesDisjSamplesDatamodule(MyDataModule):
         gpus: Optional[Union[List[int], str, int]],
         data_path: Path,
         only_use_sample_num: int = -1,
-        train_on_anchors: bool = False,
     ):
         super().__init__(
             num_workers=num_workers,
@@ -217,13 +213,8 @@ class SameClassesDisjSamplesDatamodule(MyDataModule):
             only_use_sample_num=only_use_sample_num,
         )
 
-        # all tasks will have the same anchors
-        for task_ind in range(self.num_tasks + 1):
-            self.data[f"task_{task_ind}_anchors"] = self.data["anchors"]
+        self.datasets = {"train": {}, "val": {}, "test": {}}
 
-        self.datasets = {"train": {}, "val": {}, "test": {}, "anchors": {}}
-
-        self.train_on_anchors = train_on_anchors
         self.seen_tasks = set()
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -239,7 +230,7 @@ class SameClassesDisjSamplesDatamodule(MyDataModule):
             "num_proc": 1,
         }
 
-        modes = ["train", "val", "test", "anchors"]
+        modes = ["train", "val", "test"]
 
         for mode in modes:
             self.data[f"task_{self.task_ind}_{mode}"] = self.data[f"task_{self.task_ind}_{mode}"].map(
@@ -248,11 +239,6 @@ class SameClassesDisjSamplesDatamodule(MyDataModule):
 
             self.data[f"task_{self.task_ind}_{mode}"].set_format(type="torch", columns=["x", "y"])
             self.datasets[mode][self.task_ind] = self.data[f"task_{self.task_ind}_{mode}"]
-
-        if self.train_on_anchors:
-            self.datasets["train"][self.task_ind] = concatenate_datasets(
-                self.datasets["train"], self.datasets["anchors"]
-            )
 
         self.seen_tasks.add(self.task_ind)
 
@@ -279,13 +265,3 @@ class SameClassesDisjSamplesDatamodule(MyDataModule):
             dataloaders.append(global_dataloader)
 
         return dataloaders
-
-    def anchor_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.datasets["anchors"][self.task_ind],
-            shuffle=False,
-            batch_size=self.batch_size.train,
-            num_workers=self.num_workers.train,
-            pin_memory=self.pin_memory,
-            collate_fn=partial(collate_fn, split="anchors", metadata=self.metadata),
-        )

@@ -1,4 +1,4 @@
 _target_: ccmm.matching.merger.GitRebasinMerger
 name: 'git_rebasin'
 permutation_spec: ??
-max_iter: 100
+max_iter: 400

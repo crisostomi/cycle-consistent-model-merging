@@ -55,10 +55,10 @@ def run(cfg: DictConfig):
     new_dataset["task_0_val"] = val_train_split["test"]
     new_dataset["task_0_test"] = dataset["test"]
 
-    anchors = dataset["train"].shuffle(seed=cfg.seed).select(range(cfg.num_anchors))
-    anchor_ids = set(anchors["id"])
+    # anchors = dataset["train"].shuffle(seed=cfg.seed).select(range(cfg.num_anchors))
+    # anchor_ids = set(anchors["id"])
 
-    new_dataset["anchors"] = anchors
+    # new_dataset["anchors"] = anchors
 
     num_partitions = len(classes_partitions)
 
@@ -72,13 +72,13 @@ def run(cfg: DictConfig):
 
             # partition is a dataset containing only samples belonging to the corresponding class partition
             partition = dataset[mode].filter(
-                lambda x: x[cfg.label_key] in partition_classes and x["id"] not in anchor_ids,
+                lambda x: x[cfg.label_key] in partition_classes,  # and x["id"] not in anchor_ids,
                 desc=f"Creating partition {part_ind}",
             )
             partitions_by_class_set[mode].append(partition)
 
     all_tasks = {"train": [], "test": []}
-    remaining_percentages = {"train": [1.0, 1.0], "test": [1.0, 1.0]}
+    remaining_percentages = {"train": [1.0, 1.0, 1.0, 1.0], "test": [1.0, 1.0, 1.0, 1.0]}
 
     # for each task we will have a different model
 
@@ -96,16 +96,18 @@ def run(cfg: DictConfig):
                 part_percentage = task_subset_percentages[part_ind]
 
                 # percentage of the samples having class in the partition that remain for the following tasks
-                remaining_percentages[mode][part_ind] -= part_percentage
 
-                if is_zero(remaining_percentages[mode][part_ind]):
+                if is_zero(remaining_percentages[mode][part_ind] - part_percentage):
+                    remaining_percentages[mode][part_ind] = 0
                     task_partition_samples = partitions_by_class_set[mode][part_ind]
                     partitions_by_class_set[mode][part_ind] = None
                 else:
+                    split_percentage = part_percentage / remaining_percentages[mode][part_ind]
                     task_partition_samples, remaining_samples = split(
                         samples=partitions_by_class_set[mode][part_ind],
-                        split_percentage=remaining_percentages[mode][part_ind],
+                        split_percentage=1 - split_percentage,
                     )
+                    remaining_percentages[mode][part_ind] -= part_percentage
 
                     partitions_by_class_set[mode][part_ind] = remaining_samples
 

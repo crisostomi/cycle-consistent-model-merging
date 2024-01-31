@@ -3,13 +3,15 @@ defaults:
 
 image_key: img
 label_key: y
-num_tasks: 2
+num_tasks: 4
 
 #  [0, 50] for cifar, [0, 100] for tiny_imagenet
 #  [50, 100] for cifar, [100, 200] for tiny_imagenet
 classes_partitions:
-  - [0, 50]     # C1
-  - [50, 100]   # C2
+  - [0, 25]     # C1
+  - [25, 50]   # C2
+  - [50, 75]
+  - [75, 100]
   # - [0, 100]
   # - [100, 200]
 
@@ -17,11 +19,18 @@ val_perc_per_task: 0.1
 num_anchors: 1000
 
 subset_percentages: # as many as num_tasks
-  - [0.8, 0.2] # each list as long as the number of classes partitions
-  - [0.2, 0.8]
+  - [0.7, 0.1, 0.1, 0.1] # each list as long as the number of classes partitions
+  - [0.1, 0.7, 0.1, 0.1]
+  - [0.1, 0.1, 0.7, 0.1]
+  - [0.1, 0.1, 0.1, 0.7]
 
 seed: 42
 use_cached: true
 
 dataset_folder: ${oc.env:PROJECT_ROOT}/data/${dataset.name}
 output_path: "${dataset_folder}/same_classes_disj_samples/partition-1"
+
+
+# train = 50.000
+# each task has 12.500 samples
+#

@@ -1,3 +1,4 @@
+import copy
 import logging
 from functools import partial
 from typing import Dict, List, Tuple
@@ -39,7 +40,7 @@ def frank_wolfe_synchronized_matching(
     if not verbose:
         pylogger.setLevel(logging.WARNING)
 
-    models = {symb: model.to(device) for symb, model in models.items()}
+    models = {symb: copy.deepcopy(model).to(device) for symb, model in models.items()}
 
     params = {symb: model.model.state_dict() for symb, model in models.items()}
     ref_params = params[symbols[0]]

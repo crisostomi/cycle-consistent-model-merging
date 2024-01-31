@@ -11,12 +11,14 @@ trainer:
   gpus: 1
   precision: 32
 
+num_tasks: 4
+
 model_seeds:
+  - 0
   - 1
   - 2
   - 3
-  # - 4
-  # - 5
+  - 4
 
 num_interpolation_steps: 3
 

@@ -11,7 +11,7 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 from nn_core.model_logging import NNLogger
 
-from ccmm.utils.utils import load_model_from_info
+from ccmm.utils.utils import load_model_from_artifact
 
 pylogger = logging.getLogger(__name__)
 
@@ -22,13 +22,22 @@ def run(cfg: DictConfig) -> str:
 
     seed_index_everything(cfg)
 
-    merged_model = load_model_from_info(cfg.out_model_info_path)
+    artifact_path = (
+        lambda suffix: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{core_cfg.matching.merger.name}{suffix}:v0"
+    )
+
+    suffix = "_repaired" if cfg.repaired else ""
+    tag = "repaired" if cfg.repaired else "merged"
+    core_cfg.core.tags.append(tag)
+    core_cfg.core.tags.append(core_cfg.matching.merger.name)
 
     pylogger.info("Loaded merged model.")
 
     template_core: NNTemplateCore = NNTemplateCore(restore_cfg=None)
 
     logger: NNLogger = NNLogger(logging_cfg=core_cfg.logging, cfg=core_cfg, resume_id=template_core.resume_id)
+
+    merged_model = load_model_from_artifact(logger.experiment, artifact_path(suffix))
 
     transform = instantiate(core_cfg.dataset.test.transform)
 
@@ -46,7 +55,6 @@ def run(cfg: DictConfig) -> str:
     train_results["loss/train"] = train_results["loss/test"]
 
     test_results = trainer.test(merged_model, test_loader)[0]
-
     results = {"train": train_results, "test": test_results}
 
     metrics = ["acc", "loss"]

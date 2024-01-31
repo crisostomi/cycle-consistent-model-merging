@@ -27,6 +27,7 @@ ModelParams = Dict[str, torch.Tensor]
 pylogger = logging.getLogger(__name__)
 
 MODEL_SEED_TO_SYMBOL = {
+    0: "o",
     1: "a",
     2: "b",
     3: "c",
