@@ -82,7 +82,9 @@ def upload_model_to_wandb(merged_model: LightningModule, run, cfg: DictConfig, s
 
     model_class = merged_model.__class__.__module__ + "." + merged_model.__class__.__qualname__
 
-    artifact_name = f"{cfg.model.model_identifier}_{cfg.matching.merger.name}{suffix}"
+    num_models = len(cfg.matching.model_seeds)
+
+    artifact_name = f"{cfg.model.model_identifier}_{cfg.matching.merger.name}_N{num_models}{suffix}"
 
     model_artifact = wandb.Artifact(
         name=artifact_name,

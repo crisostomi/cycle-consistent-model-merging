@@ -1,6 +1,7 @@
 name: ResNet
 widen_factor: 2
 depth: 22
+num_classes: ${dataset.num_classes}
 
 model_identifier: ${model.name}${model.depth}_${model.widen_factor}  # _bn
 
