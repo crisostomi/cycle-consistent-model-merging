@@ -1,11 +1,11 @@
-seed_index: 3
+seed_index: 20
 deterministic: False
 
 trainer:
   fast_dev_run: False
   gpus: 1
   precision: 32
-  max_epochs: 100 # MLP MNIST
+  max_epochs: 1 # MLP MNIST
   max_steps: 10000
   accumulate_grad_batches: 1
   num_sanity_val_steps: 2

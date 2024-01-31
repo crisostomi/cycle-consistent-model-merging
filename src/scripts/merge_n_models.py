@@ -1,6 +1,7 @@
 import copy
 import logging
 from typing import Dict
+import os
 
 import hydra
 import omegaconf
@@ -72,7 +73,6 @@ def upload_model_to_wandb(merged_model: LightningModule, run, cfg: DictConfig, s
         plugins=[NNCheckpointIO(jailing_dir="./tmp")],
     )
 
-    import os
 
     # Create a temporary file name
     temp_path = "temp_checkpoint.ckpt"
