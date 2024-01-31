@@ -7,7 +7,6 @@ core:
     - train
     - resnet
     - 2x
-    - batch_norm
 
 defaults:
   - hydra: default
