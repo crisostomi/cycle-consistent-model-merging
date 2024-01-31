@@ -62,6 +62,7 @@ def run(cfg: DictConfig) -> str:
     merged_model, repaired_model = model_merger(models, train_loader=train_loader)
 
     pylogger.info(f"Successfully merged {len(model_seeds)} models.")
+
     upload_model_to_wandb(merged_model, run, core_cfg)
     upload_model_to_wandb(repaired_model, run, core_cfg, suffix="_repaired")
 

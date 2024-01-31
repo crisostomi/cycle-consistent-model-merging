@@ -25,7 +25,7 @@ def run(cfg: DictConfig) -> str:
     num_models = len(cfg.model_seeds)
 
     artifact_path = (
-        lambda suffix: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{core_cfg.matching.merger.name}_N{num_models}{suffix}:v0"
+        lambda suffix: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{core_cfg.matching.merger.name}_N{num_models}{suffix}:latest"
     )
 
     suffix = "_repaired" if cfg.repaired else ""

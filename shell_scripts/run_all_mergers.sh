@@ -4,6 +4,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 additional_flags=$1
 mergers=("dummy" "frank_wolfe_to_universe" "git_rebasin")
+# mergers=("frank_wolfe_to_universe")
 
 for merger in "${mergers[@]}"; do
     echo -e "${RED}Running experiments for merger $merger ${NC}  "

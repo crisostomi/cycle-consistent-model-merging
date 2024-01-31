@@ -3,6 +3,8 @@ import copy
 import torch
 import torch.nn as nn
 
+from ccmm.models.repaired_resnet import RepairedResNet
+from ccmm.models.resnet import ResNet
 from ccmm.utils.utils import fuse_batch_norm_into_conv
 
 
@@ -19,7 +21,10 @@ def make_tracked_net(model):
     Wraps each convolutional layer in a ResetConv module.
     """
     tracked_model = copy.deepcopy(model)
+    if isinstance(tracked_model.model, ResNet):
+        tracked_model = add_resnet_junctures(tracked_model)
     replace_conv_layers(tracked_model)
+
     return tracked_model.eval()
 
 
@@ -92,6 +97,9 @@ def compute_goal_statistics(model_to_repair, endpoint_models):
 
 
 def repair_model(model_to_repair, models, train_loader):
+
+    model_to_repair = copy.deepcopy(model_to_repair)
+
     repaired_model = make_tracked_net(model_to_repair).cuda()
 
     wrapped_models = [make_tracked_net(model).cuda() for model in models.values()]
@@ -104,6 +112,20 @@ def repair_model(model_to_repair, models, train_loader):
     reset_bn_stats(repaired_model.cuda(), loader=train_loader, epochs=1)
 
     repaired_model = fuse_tracked_net(repaired_model)
+
+    if isinstance(model_to_repair.model, ResNet):
+        kwargs = {
+            "depth": repaired_model.model.depth,
+            "widen_factor": repaired_model.model.widen_factor,
+            "num_classes": repaired_model.model.num_classes,
+        }
+        repaired_model_correct_class = RepairedResNet(**kwargs).cuda().eval()
+        repaired_model_correct_class.load_state_dict(repaired_model.model.state_dict())
+
+        model_to_repair.model = repaired_model_correct_class
+        repaired_model.hparams["model"]["_target_"] = "ccmm.models.repaired_resnet.RepairedResNet"
+
+        return model_to_repair
 
     return repaired_model
 
@@ -124,6 +146,30 @@ def fuse_tracked_net(tracked_model):
     fuse_batch_norm_into_conv_recursive(tracked_model.model)
 
     return tracked_model
+
+
+def add_resnet_junctures(model):
+    tracked_model = copy.deepcopy(model)
+
+    blocks = [
+        *tracked_model.model.blockgroup1.children(),
+        *tracked_model.model.blockgroup2.children(),
+        *tracked_model.model.blockgroup3.children(),
+    ]
+
+    for block in blocks:
+
+        if len(block.shortcut) > 0:
+            continue
+
+        planes = len(block.bn2.layer_norm.weight)
+
+        shortcut = nn.Conv2d(planes, planes, kernel_size=1, stride=1, padding=0, bias=False)
+        shortcut.weight.data[:, :, 0, 0] = torch.eye(planes)
+
+        block.shortcut = shortcut
+
+    return tracked_model.cuda().eval()
 
 
 class TrackLayer(nn.Module):
