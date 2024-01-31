@@ -94,14 +94,12 @@ def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
 
     model_class = model.__class__.__module__ + "." + model.__class__.__qualname__
 
-    num_models = len(cfg.matching.model_seeds)
-
-    artifact_name = f"{cfg.model.model_identifier}_{cfg.seed_index}"
+    artifact_name = f"{cfg.nn.module.model_name}_{cfg.train.seed_index}"
 
     model_artifact = wandb.Artifact(
         name=artifact_name,
         type="checkpoint",
-        metadata={"model_identifier": cfg.model.model_identifier, "model_class": model_class},
+        metadata={"model_identifier": cfg.nn.module.model_name, "model_class": model_class},
     )
 
     model_artifact.add_file(temp_path + ".zip", name="trained.ckpt.zip")

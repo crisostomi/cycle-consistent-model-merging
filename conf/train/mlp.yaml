@@ -5,7 +5,7 @@ trainer:
   fast_dev_run: False
   gpus: 1
   precision: 32
-  max_epochs: 1 # MLP MNIST
+  max_epochs: 100 # MLP MNIST
   max_steps: 10000
   accumulate_grad_batches: 1
   num_sanity_val_steps: 2
@@ -31,10 +31,8 @@ callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
     save_top_k: 1
     verbose: False
-    monitor: null
+    monitor: ${train.monitor.metric}
     mode: ${train.monitor.mode}
-    every_n_epochs: 50
-    save_last: True
 
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     logging_interval: "step"
