@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 from typing import Dict
 
 import hydra
@@ -71,8 +72,6 @@ def upload_model_to_wandb(merged_model: LightningModule, run, cfg: DictConfig, s
     trainer = pl.Trainer(
         plugins=[NNCheckpointIO(jailing_dir="./tmp")],
     )
-
-    import os
 
     # Create a temporary file name
     temp_path = "temp_checkpoint.ckpt"

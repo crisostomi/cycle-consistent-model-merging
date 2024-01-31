@@ -1,4 +1,4 @@
-seed_index: 3
+seed_index: 20
 deterministic: False
 
 trainer:
@@ -31,10 +31,8 @@ callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
     save_top_k: 1
     verbose: False
-    monitor: null
+    monitor: ${train.monitor.metric}
     mode: ${train.monitor.mode}
-    every_n_epochs: 50
-    save_last: True
 
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     logging_interval: "step"
