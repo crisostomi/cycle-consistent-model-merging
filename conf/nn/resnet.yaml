@@ -21,7 +21,7 @@ data:
 
 module:
   _target_: ccmm.pl_modules.pl_module.MyLightningModule
-  model_name: ResNet_${nn.module.model.depth}_${nn.module.model.widen_factor}
+  model_name: ResNet${nn.module.model.depth}_${nn.module.model.widen_factor}
 
   model:
     _target_: ccmm.models.resnet.ResNet

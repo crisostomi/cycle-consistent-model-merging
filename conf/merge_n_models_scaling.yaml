@@ -9,13 +9,13 @@ core:
 defaults:
   - hydra: default
   - matching: merge_n_models # match_then_sync
-  - dataset: mnist # cifar10, mnist
-  - model: mlp # mlp, resnet20, vgg
+  - dataset: cifar10 # cifar10, mnist
+  - model: resnet20 # mlp, resnet20, vgg
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs
 
-total_num_models: 10
+total_num_models: 20
 
 logging:
   upload:

@@ -17,11 +17,13 @@ def scaling_exp(cfg: DictConfig) -> str:
 
     seed_index_everything(cfg)
 
-    model_seeds = [1, 2, 3, 4, 5]
+    next_seed = 6
+    model_seeds = list(range(1, next_seed))
 
-    for seed in range(6, cfg.total_num_models + 1):
+    for seed in range(next_seed, cfg.total_num_models + 1):
 
         model_seeds.append(seed)
+        pylogger.info(f"Running with seeds {model_seeds}")
         cfg.matching.model_seeds = model_seeds
 
         merge_n_models(cfg)
