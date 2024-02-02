@@ -1,10 +1,14 @@
 # import graphviz
 import warnings
 import graphviz
+import functools
+import copy
 
 from numpy import unique, argmax, arange
 from collections import defaultdict
 from torchviz import make_dot
+
+from ccmm.matching.permutation_spec import PermutationSpec
 
 
 class graph:
@@ -344,3 +348,30 @@ def solve_graph(model, input, remove_nodes=list()):
     if n_perm == 0:
         warnings.warn("No permutation left in graph, you might let more nodes free")
     return perm_dict, n_perm, permutation_g, parameter_map
+
+
+def graph_permutations_to_perm_spec(model, perm_dict, map_param_index, map_prev_param_index):
+    
+    perm_dict_copy = copy.deepcopy(perm_dict)
+    perm_dict_copy[None] = None
+
+    def rgetattr(obj, attr, *args):  # Recursive getattr
+        def _getattr(obj, attr):
+            return getattr(obj, attr, *args)
+        return functools.reduce(_getattr, [obj] + attr.split('.'))
+    
+    layer_and_axes_to_perm = {
+        layer: tuple(
+            [perm_dict_copy[block], perm_dict_copy[map_prev_param_index[layer]]] + \
+            [None] * (rgetattr(model, layer).dim() - 2)
+        )[:rgetattr(model, layer).dim()]
+        for layer, block in map_param_index.items()
+    }
+    perm_to_layers_and_axes = {
+        perm_id: 
+            [(layer, 0) for layer, block in map_param_index.items() if perm_dict[block] == perm_id] + \
+            [(layer, 1) for layer, block in map_prev_param_index.items() if perm_dict[block] == perm_id] 
+        for perm_id in set(perm_dict_copy.values()) if perm_id is not None
+    }
+    
+    return PermutationSpec(perm_to_layers_and_axes, layer_and_axes_to_perm)
