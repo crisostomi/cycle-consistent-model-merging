@@ -231,3 +231,4 @@ multirun/
 **/artifacts/**
 doctest-output/
 tmp/
+notebooks/figures/
