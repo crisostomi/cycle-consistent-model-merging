@@ -124,7 +124,7 @@ class FrankWolfeSynchronizedMerger(Merger):
         merged_model = copy.deepcopy(models[symbols[0]])
 
         combinations = get_all_symbols_combinations(symbols)
-        canonical_combinations = [(source, target) for (source, target) in combinations if source < target]
+        canonical_combinations = [(source, target) for (source, target) in combinations if source < target]  # NOQA
 
         models_permuted_to_universe = {symbol: copy.deepcopy(model) for symbol, model in models.items()}
 
@@ -132,7 +132,7 @@ class FrankWolfeSynchronizedMerger(Merger):
             models=models,
             perm_spec=self.permutation_spec,
             symbols=symbols,
-            combinations=canonical_combinations,
+            combinations=combinations,
             max_iter=self.max_iter,
             initialization_method=self.initialization_method,
         )

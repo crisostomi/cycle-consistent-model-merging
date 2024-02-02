@@ -5,12 +5,13 @@ core:
   version: 0.0.1
   tags:
     - merge_n_models
+    - width_exp
 
 defaults:
   - hydra: default
   - matching: merge_n_models # match_then_sync
   - dataset: cifar10 # cifar10, mnist
-  - model: resnet20 # mlp, resnet20, vgg
+  - model: vgg # mlp, resnet20, vgg
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs

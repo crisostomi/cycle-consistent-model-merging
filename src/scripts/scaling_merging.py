@@ -17,7 +17,7 @@ def scaling_exp(cfg: DictConfig) -> str:
 
     seed_index_everything(cfg)
 
-    next_seed = 6
+    next_seed = 9
     model_seeds = list(range(1, next_seed))
 
     for seed in range(next_seed, cfg.total_num_models + 1):

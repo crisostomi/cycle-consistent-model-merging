@@ -22,7 +22,7 @@ model_seeds:
 
 num_interpolation_steps: 3
 
-batch_size: 5000
+batch_size: 100
 num_workers: 14
 
 model_info_path: ${oc.env:PROJECT_ROOT}/output/${dataset.name}/${model.model_identifier}

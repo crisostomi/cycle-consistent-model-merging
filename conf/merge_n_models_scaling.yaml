@@ -15,7 +15,7 @@ defaults:
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs
 
-total_num_models: 20
+total_num_models: 10
 
 logging:
   upload:
