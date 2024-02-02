@@ -4,18 +4,18 @@ core:
   storage_dir: ${oc.env:PROJECT_ROOT}/storage
   version: 0.0.1
   tags:
-    - dev
+    - scaling
 
-# MLP is trained over MNIST
-# ResNet20 is trained over CIFAR10
 defaults:
   - hydra: default
-  - matching: match_two_models # match_then_sync
+  - matching: merge_n_models # match_then_sync
   - dataset: cifar10 # cifar10, mnist
-  - model: resnet20 # resnet20, mlp, vgg
+  - model: resnet20 # mlp, resnet20, vgg
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs
+
+total_num_models: 10
 
 logging:
   upload:

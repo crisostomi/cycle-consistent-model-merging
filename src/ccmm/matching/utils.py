@@ -2,7 +2,7 @@ import copy
 import itertools
 import json
 import logging
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Union
 
 import matplotlib.pyplot as plt
 import torch
@@ -187,7 +187,10 @@ def plot_permutation_history_animation(perm_history, cfg):
         plt.close(fig)
 
 
-def unfactor_permutations(permutations):
+def unfactor_permutations(permutations, matrix_format=False):
+    if matrix_format:
+        raise NotImplementedError
+
     symbols = set(permutations.keys())
 
     unfactored_permutations = {
@@ -214,13 +217,23 @@ def unfactor_permutations(permutations):
     return unfactored_permutations
 
 
-def load_permutations(path, factored=False):
+def load_permutations(
+    path, factored=False, matrix_format=False
+) -> Dict[str, Union[PermutationIndices, PermutationMatrix]]:
     with open(path, "r") as f:
         permutations = json.load(f)
 
     if factored:
-        return unfactor_permutations(permutations)
+        return unfactor_permutations(permutations, matrix_format)
 
+    if matrix_format:
+        for source, targets in permutations.items():
+            for target, source_target_perms in targets.items():
+                for perm_name, perm in source_target_perms.items():
+                    if perm is not None:
+                        permutations[source][target][perm_name] = torch.tensor(perm)
+
+        return permutations
     else:
         for source, targets in permutations.items():
             for target, source_target_perms in targets.items():

@@ -9,13 +9,9 @@ from ccmm.models.utils import BatchNorm2d, LayerNorm2d
 pylogger = logging.getLogger(__name__)
 
 
-class ResNet(nn.Module):
+class RepairedResNet(nn.Module):
     def __init__(self, depth, widen_factor, num_classes, norm_layer="ln"):
-        super(ResNet, self).__init__()
-
-        self.depth = depth
-        self.widen_factor = widen_factor
-        self.num_classes = num_classes
+        super(RepairedResNet, self).__init__()
 
         norm_layer = LayerNorm2d if norm_layer == "ln" else BatchNorm2d
 
@@ -30,7 +26,7 @@ class ResNet(nn.Module):
 
         # (16 * wm, input_channels, 3, 3)
         self.conv1 = nn.Conv2d(
-            in_channels=input_channels, out_channels=out_channels[0], kernel_size=3, padding=1, bias=False
+            in_channels=input_channels, out_channels=out_channels[0], kernel_size=3, padding=1, bias=True
         )
         # (16 * wm)
         self.bn1 = norm_layer(out_channels[0])
@@ -109,19 +105,19 @@ class Block(nn.Module):
     def __init__(self, in_channels, out_channels, stride, norm_layer="ln"):
         super(Block, self).__init__()
         # input_dim = [batch_size, in_channels, dim, dim]
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=True)
         self.bn1 = norm_layer(out_channels)
 
         # input_dim = [planes, dim, dim]
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True)
         self.bn2 = norm_layer(out_channels)
 
-        self.shortcut = nn.Sequential()
+        self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=True)
         if stride != 1:
             assert stride == 2
 
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=True),
                 norm_layer(out_channels),
             )
 

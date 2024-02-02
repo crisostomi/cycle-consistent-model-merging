@@ -104,7 +104,7 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="train_tasks")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="train_tasks", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

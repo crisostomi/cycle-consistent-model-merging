@@ -14,8 +14,7 @@ from tqdm import tqdm
 from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 
-from ccmm.matching.weight_matching import optimize_synchronization, weight_matching
-from ccmm.utils.matching_utils import (
+from ccmm.matching.utils import (
     PermutationIndices,
     check_permutations_are_valid,
     get_all_symbols_combinations,
@@ -26,6 +25,7 @@ from ccmm.utils.matching_utils import (
     restore_original_weights,
     three_models_uber_matrix,
 )
+from ccmm.matching.weight_matching import optimize_synchronization, weight_matching
 from ccmm.utils.utils import load_model_from_info, map_model_seed_to_symbol, save_permutations
 
 pylogger = logging.getLogger(__name__)
@@ -138,7 +138,7 @@ def synchronize_permutations(permutations: Dict[str, Dict[str, PermutationIndice
     return sync_permutations
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

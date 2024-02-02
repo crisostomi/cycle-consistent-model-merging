@@ -1,11 +1,13 @@
 import copy
 import logging
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 from pytorch_lightning import LightningModule
+from torch.utils.data import DataLoader
 
 from ccmm.matching.frank_wolfe_sync_matching import frank_wolfe_synchronized_matching
+from ccmm.matching.repair import repair_model
 from ccmm.matching.utils import (
     apply_permutation_to_statedict,
     get_all_symbols_combinations,
@@ -36,7 +38,7 @@ class DummyMerger(Merger):
     def __init__(self, name, permutation_spec: PermutationSpec):
         super().__init__(name, permutation_spec)
 
-    def __call__(self, models: Dict[str, LightningModule]):
+    def __call__(self, models: Dict[str, LightningModule], train_loader: Optional[DataLoader] = None):
         model_list = list(models.values())
         merged_params = copy.deepcopy(model_list[0].model.state_dict())
         for model in model_list[1:]:
@@ -48,7 +50,10 @@ class DummyMerger(Merger):
 
         merged_model = model_list[0]
         merged_model.model.load_state_dict(merged_params)
-        return merged_model
+
+        repaired_model = repair_model(merged_model, models, train_loader)
+
+        return merged_model, repaired_model
 
 
 class GitRebasinMerger(Merger):
@@ -56,7 +61,7 @@ class GitRebasinMerger(Merger):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
 
-    def __call__(self, models: Dict[str, LightningModule]):
+    def __call__(self, models: Dict[str, LightningModule], train_loader: Optional[DataLoader] = None):
         model_params = [model.model.state_dict() for model in models.values()]
         num_models = len(model_params)
 
@@ -94,7 +99,9 @@ class GitRebasinMerger(Merger):
         merged_model = models[list(models.keys())[0]]
         merged_model.model.load_state_dict(mean_params)
 
-        return merged_model
+        repaired_model = repair_model(merged_model, models, train_loader)
+
+        return merged_model, repaired_model
 
 
 class FrankWolfeSynchronizedMerger(Merger):
@@ -111,21 +118,21 @@ class FrankWolfeSynchronizedMerger(Merger):
         self.average_in_universe = average_in_universe
         self.initialization_method = initialization_method
 
-    def __call__(self, models):
+    def __call__(self, models, train_loader: Optional[DataLoader] = None):
         symbols = list(models.keys())
 
-        merged_model = models[symbols[0]]
+        merged_model = copy.deepcopy(models[symbols[0]])
 
         combinations = get_all_symbols_combinations(symbols)
-        canonical_combinations = [(source, target) for (source, target) in combinations if source < target]
+        canonical_combinations = [(source, target) for (source, target) in combinations if source < target]  # NOQA
 
-        model_params = {symbol: model.model.state_dict() for symbol, model in models.items()}
+        models_permuted_to_universe = {symbol: copy.deepcopy(model) for symbol, model in models.items()}
 
         perm_indices, _ = frank_wolfe_synchronized_matching(
             models=models,
             perm_spec=self.permutation_spec,
             symbols=symbols,
-            combinations=canonical_combinations,
+            combinations=combinations,
             max_iter=self.max_iter,
             initialization_method=self.initialization_method,
         )
@@ -135,17 +142,21 @@ class FrankWolfeSynchronizedMerger(Merger):
             for perm_name in perm_indices[symbol].keys():
                 perm = perm_indices_to_perm_matrix(perm_indices[symbol][perm_name]).T
                 perms_to_apply[perm_name] = perm_matrix_to_perm_indices(perm)
-            updated_params = apply_permutation_to_statedict(self.permutation_spec, perms_to_apply, model_params[symbol])
-            model_params[symbol] = updated_params
+            updated_params = apply_permutation_to_statedict(
+                self.permutation_spec, perms_to_apply, models[symbol].model.state_dict()
+            )
+            models_permuted_to_universe[symbol].model.load_state_dict(updated_params)
 
         if self.average_in_universe:
-            merged_params = average_models(model_params)
+            merged_params = average_models([model.model.state_dict() for model in models_permuted_to_universe.values()])
         else:
-            merged_params = model_params[symbols[0]]
+            merged_params = models_permuted_to_universe[symbols[0]]
 
         merged_model.model.load_state_dict(merged_params)
 
-        return merged_model
+        repaired_model = repair_model(merged_model, models_permuted_to_universe, train_loader)
+
+        return merged_model, repaired_model
 
 
 class FrankWolfeToReferenceMerger(Merger):
@@ -160,7 +171,7 @@ class FrankWolfeToReferenceMerger(Merger):
         self.max_iter = max_iter
         self.initialization_method = initialization_method
 
-    def __call__(self, models):
+    def __call__(self, models, train_loader: Optional[DataLoader] = None):
         merged_model = models[list(models.keys())[0]]
         num_models = len(models)
 
@@ -207,7 +218,7 @@ class GitRebasinPairwiseMerger(Merger):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
 
-    def __call__(self, models: Dict[str, LightningModule]):
+    def __call__(self, models: Dict[str, LightningModule], train_loader: Optional[DataLoader] = None):
         model_params = [model.model.state_dict() for model in models.values()]
         num_models = len(model_params)
         ref_model_id = 0

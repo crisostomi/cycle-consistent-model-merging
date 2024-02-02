@@ -2,18 +2,20 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Optional
+import os
 
 import hydra
 import omegaconf
 import pytorch_lightning as pl
 from omegaconf import DictConfig
-from pytorch_lightning import Callback
+from pytorch_lightning import Callback, LightningModule
 
 from nn_core.callbacks import NNTemplateCore
 from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import enforce_tags, seed_index_everything
 from nn_core.model_logging import NNLogger
 from nn_core.serialization import NNCheckpointIO
+import wandb
 
 import ccmm  # noqa
 from ccmm.data.datamodule import MetaData
@@ -68,18 +70,7 @@ def run(cfg: DictConfig) -> str:
     pylogger.info("Starting training!")
     trainer.fit(model=model, datamodule=datamodule, ckpt_path=template_core.trainer_ckpt_path)
 
-    best_model_path = get_checkpoint_callback(callbacks).best_model_path
-
-    best_model_info = {
-        "path": to_relative_path(best_model_path),
-        "class": str(model.__class__.__module__ + "." + model.__class__.__qualname__),
-    }
-
-    model_identifier = f"{cfg.nn.module.model_name}_{cfg.train.seed_index}"
-    model_info_path = Path(cfg.nn.output_path) / cfg.dataset.name / f"{model_identifier}.json"
-    model_info_path.parent.mkdir(parents=True, exist_ok=True)
-
-    json.dump(best_model_info, open(model_info_path, "w+"))
+    upload_model_to_wandb(model, logger.experiment, cfg)
 
     if "test" in cfg.nn.data.dataset and trainer.checkpoint_callback.best_model_path is not None:
         pylogger.info("Starting testing!")
@@ -91,7 +82,32 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="resnet", version_base="1.1")
+def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
+    trainer = pl.Trainer(
+        plugins=[NNCheckpointIO(jailing_dir="./tmp")],
+    )
+
+    temp_path = "temp_checkpoint.ckpt"
+
+    trainer.strategy.connect(model)
+    trainer.save_checkpoint(temp_path)
+
+    model_class = model.__class__.__module__ + "." + model.__class__.__qualname__
+
+    artifact_name = f"{cfg.nn.module.model_name}_{cfg.train.seed_index}"
+
+    model_artifact = wandb.Artifact(
+        name=artifact_name,
+        type="checkpoint",
+        metadata={"model_identifier": cfg.nn.module.model_name, "model_class": model_class},
+    )
+
+    model_artifact.add_file(temp_path + ".zip", name="trained.ckpt.zip")
+    run.log_artifact(model_artifact)
+
+    os.remove(temp_path + ".zip")
+
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

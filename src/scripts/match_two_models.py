@@ -14,7 +14,7 @@ from nn_core.common.utils import seed_index_everything
 
 import ccmm  # noqa
 from ccmm.matching.utils import get_inverse_permutations, plot_permutation_history_animation
-from ccmm.utils.utils import flatten_params, load_model_from_artifact, map_model_seed_to_symbol, save_permutations
+from ccmm.utils.utils import load_model_from_artifact, map_model_seed_to_symbol, save_permutations
 
 pylogger = logging.getLogger(__name__)
 
@@ -67,6 +67,10 @@ def run(cfg: DictConfig) -> str:
         torch.save(model.model.state_dict(), cfg.permutations_path / f"model_{symbol}.pt")
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
+
+    for past_perm_ind, past_perm in enumerate(perm_history):
+        past_perm = {"a": {"b": past_perm}, "b": {"a": {k: None for k in past_perm.keys()}}}
+        save_permutations(past_perm, cfg.permutations_path / f"history/{past_perm_ind}.json")
 
     if cfg.plot_perm_history:
         plot_permutation_history_animation(perm_history, cfg)
