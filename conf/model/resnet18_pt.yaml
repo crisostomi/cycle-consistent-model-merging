@@ -1,0 +1,8 @@
+name: ResNet
+depth: 18
+num_classes: ${dataset.num_classes}
+
+model_identifier: ${model.name}${model.depth}_PT
+
+permutation_spec_builder:
+  _target_: ccmm.matching.permutation_spec.ResNet20PermutationSpecBuilder
