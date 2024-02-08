@@ -1,5 +1,5 @@
 defaults:
-  - matcher: frank_wolfe # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic, dummy, frank_wolfe
+  - matcher: sinkhorn # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic, dummy, frank_wolfe, sinhkorn
 
 seed_index: 4
 

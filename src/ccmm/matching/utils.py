@@ -163,8 +163,23 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
     permuted_params = {}
 
     for param_name, param in all_params.items():
+
+        param_name_in_perm_dict = param_name
+
+        if "num_batches_tracked" in param_name:
+            permuted_params[param_name] = param
+            continue
+
+        if "running_mean" in param_name or "running_var" in param_name:
+            layer_name = ".".join(param_name.split(".")[:-1])
+            param_name_in_perm_dict = layer_name + ".weight"
+
+        assert (
+            param_name_in_perm_dict in ps.layer_and_axes_to_perm
+        ), f"param_name {param_name} not found in ps.layer_and_axes_to_perm"
+
         param = copy.deepcopy(param)
-        perms_to_apply = ps.layer_and_axes_to_perm[param_name]
+        perms_to_apply = ps.layer_and_axes_to_perm[param_name_in_perm_dict]
 
         param = get_permuted_param(param, perms_to_apply, perm_matrices)
         permuted_params[param_name] = param
@@ -243,74 +258,69 @@ def load_permutations(
 
         return permutations
 
+    # def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):
+    #     """
+    #     Maximise an objective f over block permutation matrices.
 
-# def frank_wolfe_with_sdp_penalty(W, X0, get_gradient_fn, get_objective_fn):
-#     """
-#     Maximise an objective f over block permutation matrices.
+    #     Args:
+    #         W: Data involved in the objective function.
+    #         X0: Initialisation matrix.
 
-#     Args:
-#         W: Data involved in the objective function.
-#         X0: Initialisation matrix.
+    #     Returns:
+    #         X: Optimised matrix.
+    #         obj_vals: Objective values at each iteration.
+    #     """
+    #     n_max_fw_iters = 1000
+    #     convergence_threshold = 1e-6
+    #     X_old = X0
 
-#     Returns:
-#         X: Optimised matrix.
-#         obj_vals: Objective values at each iteration.
-#     """
-#     n_max_fw_iters = 1000
-#     convergence_threshold = 1e-6
-#     X_old = X0
+    #     obj_vals = [get_objective_fn(X_old, W)]
 
-#     obj_vals = [get_objective_fn(X_old, W)]
+    #     for jj in range(n_max_fw_iters):
 
-#     for jj in range(n_max_fw_iters):
+    #         grad_f = get_gradient_fn(X_old)  # Function that computes gradient of f w.r.t. X_old.
 
-#         grad_f = get_gradient_fn(X_old)  # Function that computes gradient of f w.r.t. X_old.
+    #         grad_f_scaled = -grad_f  # Flip sign since we want to maximise.
 
-#         grad_f_scaled = -grad_f  # Flip sign since we want to maximise.
+    #         # Project gradient onto set of permutation matrices
+    #         D = grad_f_scaled  # project_onto_partial_perm_blockwise(grad_f_scaled)
 
-#         # Project gradient onto set of permutation matrices
-#         D = grad_f_scaled  # project_onto_partial_perm_blockwise(grad_f_scaled)
+    #         # Line search to find step size (convex combination of X_old and D)
+    #         D_minus_X_old = D - X_old
 
-#         # Line search to find step size (convex combination of X_old and D)
-#         D_minus_X_old = D - X_old
+    #         def fun(t):
+    #             return get_objective_fn(X_old + t * D_minus_X_old)
 
-#         def fun(t):
-#             return get_objective_fn(X_old + t * D_minus_X_old)
+    #         eta = fminbound(fun, 0, 1)
 
-#         eta = fminbound(fun, 0, 1)
+    #         X = X_old + eta * D_minus_X_old
 
-#         X = X_old + eta * D_minus_X_old
+    #         # Check convergence
+    #         obj_val = get_objective_fn(X, W)
+    #         obj_vals.append(obj_val)
 
-#         # Check convergence
-#         obj_val = get_objective_fn(X, W)
-#         obj_vals.append(obj_val)
+    #         if abs(obj_val / obj_vals[-2] - 1) < convergence_threshold:
+    #             break
 
-#         if abs(obj_val / obj_vals[-2] - 1) < convergence_threshold:
-#             break
+    #         X_old = X
 
-#         X_old = X
-
-#     return X, obj_vals
+    #     return X, obj_vals
 
 
-# def apply_perm(perm, x, axis):
-#     assert perm.shape[0] == perm.shape[1]
-#     assert x.shape[axis] == perm.shape[0]
+def permute_batchnorm(model, perm, perm_dict, map_param_index):
 
-#     # Bring the specified axis to the front
-#     x = x.moveaxis(axis, 0)
+    for name, module in model.named_modules():
 
-#     # Store the original shape and reshape for matrix multiplication
-#     original_shape = x.shape
-#     x = x.reshape(x.shape[0], -1)
+        if "BatchNorm" in str(type(module)):
 
-#     # Apply the permutation
-#     x_permuted = perm @ x
+            if name + ".weight" in map_param_index:
 
-#     # Reshape back to the expanded original shape
-#     x_permuted = x_permuted.reshape(original_shape)
+                if module.running_mean is None and module.running_var is None:
+                    continue
 
-#     # Move the axis back to its original position
-#     x_permuted = x_permuted.moveaxis(0, axis)
+                i = perm_dict[map_param_index[name + ".weight"]]
 
-#     return x_permuted
+                index = torch.argmax(perm[i], dim=1) if i is not None else torch.arange(module.running_mean.shape[0])
+
+                module.running_mean.copy_(module.running_mean[index, ...])
+                module.running_var.copy_(module.running_var[index, ...])

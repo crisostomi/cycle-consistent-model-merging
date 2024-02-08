@@ -58,7 +58,7 @@ class PermutationSpecBuilder:
     def __init__(self) -> None:
         pass
 
-    def create_permutation(self) -> list:
+    def create_permutation_spec(self) -> list:
         pass
 
     def permutation_spec_from_axes_to_perm(self, axes_to_perm: dict) -> PermutationSpec:
@@ -76,7 +76,7 @@ class MLPPermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self, num_hidden_layers: int):
         self.num_hidden_layers = num_hidden_layers
 
-    def create_permutation(self) -> PermutationSpec:
+    def create_permutation_spec(self) -> PermutationSpec:
         L = self.num_hidden_layers
         assert L >= 1
 

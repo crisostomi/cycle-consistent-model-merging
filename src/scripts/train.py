@@ -1,12 +1,11 @@
-import json
 import logging
-from pathlib import Path
-from typing import List, Optional
 import os
+from typing import List, Optional
 
 import hydra
 import omegaconf
 import pytorch_lightning as pl
+import wandb
 from omegaconf import DictConfig
 from pytorch_lightning import Callback, LightningModule
 
@@ -15,11 +14,10 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import enforce_tags, seed_index_everything
 from nn_core.model_logging import NNLogger
 from nn_core.serialization import NNCheckpointIO
-import wandb
 
 import ccmm  # noqa
 from ccmm.data.datamodule import MetaData
-from ccmm.utils.utils import build_callbacks, get_checkpoint_callback, to_relative_path
+from ccmm.utils.utils import build_callbacks
 
 pylogger = logging.getLogger(__name__)
 
@@ -106,6 +104,7 @@ def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
     run.log_artifact(model_artifact)
 
     os.remove(temp_path + ".zip")
+
 
 @hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):

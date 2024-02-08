@@ -24,7 +24,7 @@ from ccmm.matching.utils import (
     load_permutations,
     restore_original_weights,
 )
-from ccmm.utils.utils import linear_interpolate_state_dicts, load_model_from_artifact, map_model_seed_to_symbol
+from ccmm.utils.utils import linear_interpolate, load_model_from_artifact, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def run(cfg: DictConfig) -> str:
 
         model_orig_weights = {symbol: copy.deepcopy(model.model.state_dict()) for symbol, model in models.items()}
 
-        # perms[a, b] maps b -> a  
+        # perms[a, b] maps b -> a
         updated_params[fixed][permutee] = apply_permutation_to_statedict(
             permutation_spec, permutations[fixed][permutee], models[permutee].model.state_dict()
         )
@@ -154,7 +154,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
 
     for lam in tqdm(lambdas):
 
-        interpolated_params = linear_interpolate_state_dicts(lam, fixed_dict, permutee_dict)
+        interpolated_params = linear_interpolate(lam, fixed_dict, permutee_dict)
         permutee.model.load_state_dict(interpolated_params)
 
         train_results = trainer.test(permutee, train_loader)

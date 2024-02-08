@@ -159,7 +159,6 @@ def weight_matching(
 
 
 def compute_weights_similarity(similarity_matrix, perm_indices):
-
     """
     similarity_matrix: matrix s.t. S[i, j] = w_a[i] @ w_b[j]
 

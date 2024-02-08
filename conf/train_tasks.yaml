@@ -9,6 +9,6 @@ core:
 defaults:
   - hydra: default
   - nn: n_tasks
-  - train: resnet
+  - train: resnet18_pt
   - dataset: cifar100_tasks
   - _self_

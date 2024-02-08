@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def plot_interpolation_results(
@@ -71,3 +72,35 @@ def plot_interpolation_results(
     ax.legend(loc="lower right", framealpha=0.5)
     fig.tight_layout()
     return fig
+
+
+def decimal_to_rgb_color(decimal_value, cmap="viridis"):
+    """
+    Convert a decimal value (between 0 and 1) to the corresponding RGB color in the given colormap.
+    """
+    if not (0 <= decimal_value <= 1):
+        raise ValueError("decimal_value should be between 0 and 1 inclusive.")
+
+    colormap = plt.get_cmap(cmap)
+    color = colormap(decimal_value)[:3]
+
+    color = [round(c, 2) for c in color]
+    return tuple(color)
+
+
+def adjust_cmap_alpha(cmap, alpha=1.0):
+    # Get the colormap colors
+    colors = cmap(np.arange(cmap.N))
+
+    # Set the alpha value
+    colors[:, -1] = alpha
+
+    # Create a new colormap with the modified colors
+    new_cmap = plt.matplotlib.colors.ListedColormap(colors)
+    return new_cmap
+
+
+def rgba_to_rgb(rgba, background=(1, 1, 1)):
+    print(rgba)
+    """Convert an RGBA color to an RGB color, blending over a specified background color."""
+    return [rgba[i] * rgba[3] + background[i] * (1 - rgba[3]) for i in range(3)]

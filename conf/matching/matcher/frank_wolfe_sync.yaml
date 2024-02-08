@@ -2,6 +2,6 @@
 _target_: ccmm.matching.matcher.FrankWolfeSynchronizedMatcher
 name: 'frank_wolfe'
 permutation_spec: ??
-max_iter: 200 # TODO: switch back
-initialization_method: 'sinkhorn' # 'sinkhorn', 'identity' or 'random'
+max_iter: 600
+initialization_method: 'identity' # 'sinkhorn', 'identity' or 'random'
 verbose: False

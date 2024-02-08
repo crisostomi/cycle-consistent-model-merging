@@ -1,4 +1,5 @@
 import copy
+from typing import Dict, List
 
 import torch
 import torch.nn as nn
@@ -42,8 +43,12 @@ def reset_bn_stats(model, epochs, loader):
     model.train()
     for _ in range(epochs):
         with torch.no_grad():
-            for images, _ in loader:
-                _ = model(images.cuda())
+            for batch in loader:
+                if isinstance(batch, Dict):
+                    input = batch["x"]
+                else:
+                    input = batch[0]
+                _ = model(input.cuda())
 
 
 def compute_goal_statistics_two_models(model_a, model_to_repair, model_b):
@@ -104,12 +109,14 @@ def repair_model(model_to_repair, models, train_loader):
 
     wrapped_models = [make_tracked_net(model).cuda() for model in models.values()]
 
-    for model in wrapped_models:
+    for i, model in enumerate(wrapped_models):
+        train_loader = train_loader if not isinstance(train_loader, List) else train_loader[i + 1]
         reset_bn_stats(model.cuda(), loader=train_loader, epochs=1)
 
     compute_goal_statistics(repaired_model, wrapped_models)
 
-    reset_bn_stats(repaired_model.cuda(), loader=train_loader, epochs=1)
+    train_loader_merged = train_loader if not isinstance(train_loader, List) else train_loader[0]
+    reset_bn_stats(repaired_model.cuda(), loader=train_loader_merged, epochs=1)
 
     repaired_model = fuse_tracked_net(repaired_model)
 

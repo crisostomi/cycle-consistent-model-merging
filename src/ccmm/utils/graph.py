@@ -1,11 +1,11 @@
 # import graphviz
-import warnings
-import graphviz
-import functools
 import copy
-
-from numpy import unique, argmax, arange
+import functools
+import warnings
 from collections import defaultdict
+
+import graphviz
+from numpy import arange, argmax, unique
 from torchviz import make_dot
 
 from ccmm.matching.permutation_spec import PermutationSpec
@@ -100,7 +100,7 @@ class graph:
         if self.nodes[key]["type"] in [
             "NativeBatchNormBackward0",
             "NativeGroupNormBackward0",
-            "NativeLayerNormBackward0"
+            "NativeLayerNormBackward0",
         ]:
             return key
 
@@ -122,19 +122,10 @@ class graph:
             node = queue.pop(0)
             type_node = self.nodes[node]["type"]
 
-            if (
-                node in perms
-                and notfirst
-                and type_node
-                in ["ConvolutionBackward0", "AddmmBackward0", "MmBackward0"]
-            ):
+            if node in perms and notfirst and type_node in ["ConvolutionBackward0", "AddmmBackward0", "MmBackward0"]:
                 childs.append(node)
             else:
-                if type_node in [
-                    "NativeBatchNormBackward0",
-                    "NativeGroupNormBackward0",
-                    "NativeLayerNormBackward0"
-                ]:
+                if type_node in ["NativeBatchNormBackward0", "NativeGroupNormBackward0", "NativeLayerNormBackward0"]:
                     fused_nodes.append(node)
                 for child in self.edges[node]:
                     if child not in visited:
@@ -172,9 +163,7 @@ class graph:
                 self.add_edge(from_node, to_node)
 
 
-def permutation_graph(
-    model, input, fix_multiple=False, mark_as_leaf=list(), remove_nodes=list()
-):
+def permutation_graph(model, input, fix_multiple=False, mark_as_leaf=list(), remove_nodes=list()):
     prev_dev = next(model.parameters()).device
     model.to("cpu")
     input = input.to("cpu")
@@ -198,16 +187,10 @@ def permutation_graph(
     for p in permutation_list:
         if p in visited:
             continue
-        if g.nodes[p]["type"] in [
-            "NativeBatchNormBackward0",
-            "NativeGroupNormBackward0",
-            "NativeLayerNormBackward0"
-        ]:
+        if g.nodes[p]["type"] in ["NativeBatchNormBackward0", "NativeGroupNormBackward0", "NativeLayerNormBackward0"]:
             continue
 
-        permutation_graph.add_node(
-            p, g.nodes[p]["type"], g.nodes[p]["is_output"], g.nodes[p]["is_param"]
-        )
+        permutation_graph.add_node(p, g.nodes[p]["type"], g.nodes[p]["is_output"], g.nodes[p]["is_param"])
         childs, fused_nodes = g.child_perm(p, permutation_list)
 
         if fused_nodes:
@@ -240,9 +223,7 @@ def permutation_graph(
             permutation_graph.naming[k] = max_index
             max_index += 1
 
-    remap_index = {
-        r: v for (v, r) in enumerate(sorted(list(permutation_graph.naming.values())))
-    }
+    remap_index = {r: v for (v, r) in enumerate(sorted(list(permutation_graph.naming.values())))}
     for k in permutation_graph.naming.keys():
         permutation_graph.naming[k] = remap_index[permutation_graph.naming[k]]
 
@@ -269,11 +250,7 @@ def get_connected_from(idx, permutation_g):
     """
     get the ids of the parents of the node idx
     """
-    return [
-        permutation_g.naming[k]
-        for k, l in permutation_g.edges.items()
-        if permutation_g.index2name(idx) in l
-    ]
+    return [permutation_g.naming[k] for k, l in permutation_g.edges.items() if permutation_g.index2name(idx) in l]
 
 
 def get_perm_dict(permutation_g):
@@ -301,17 +278,11 @@ def remove_nodes_from_perm_dict(nodes_id, perm_dict):
     removes the permutation associated with the nodes as well as other nodes using the same permutation
     """
     for node_id in nodes_id:
-        if not node_id in perm_dict.keys():
-            warnings.warn(
-                "Node_id {} cannot be removed, this node is not in the graph".format(
-                    node_id
-                )
-            )
+        if node_id not in perm_dict.keys():
+            warnings.warn("Node_id {} cannot be removed, this node is not in the graph".format(node_id))
             continue
         perm_id = perm_dict[node_id]
-        list_to_remove = [
-            n_id for n_id in perm_dict.keys() if perm_dict[n_id] == perm_id
-        ]
+        list_to_remove = [n_id for n_id in perm_dict.keys() if perm_dict[n_id] == perm_id]
         for node in list_to_remove:
             perm_dict[node] = None
     return perm_dict
@@ -350,28 +321,59 @@ def solve_graph(model, input, remove_nodes=list()):
     return perm_dict, n_perm, permutation_g, parameter_map
 
 
+# def graph_permutations_to_perm_spec(model, perm_dict, map_param_index, map_prev_param_index):
+#     """ """
+
+#     perm_dict_copy = copy.deepcopy(perm_dict)
+#     perm_dict_copy[None] = None
+
+#     def rgetattr(obj, attr, *args):  # Recursive getattr
+#         def _getattr(obj, attr):
+#             return getattr(obj, attr, *args)
+
+#         return functools.reduce(_getattr, [obj] + attr.split("."))
+
+#     layer_and_axes_to_perm = {}
+#     for layer, block in map_param_index.items():
+
+#         layer_and_axes_to_perm[layer] = tuple(
+#             [perm_dict_copy[block], perm_dict_copy[map_prev_param_index[layer]]]
+#             + [None] * (rgetattr(model, layer).dim() - 2)
+#         )[: rgetattr(model, layer).dim()]
+
+#     perm_to_layers_and_axes = {
+#         perm_id: [(layer, 0) for layer, block in map_param_index.items() if perm_dict[block] == perm_id]
+#         + [(layer, 1) for layer, block in map_prev_param_index.items() if perm_dict[block] == perm_id]
+#         for perm_id in set(perm_dict_copy.values())
+#         if perm_id is not None
+#     }
+
+#     return PermutationSpec(perm_to_layers_and_axes, layer_and_axes_to_perm)
+
+
 def graph_permutations_to_perm_spec(model, perm_dict, map_param_index, map_prev_param_index):
-    
+
     perm_dict_copy = copy.deepcopy(perm_dict)
     perm_dict_copy[None] = None
 
     def rgetattr(obj, attr, *args):  # Recursive getattr
         def _getattr(obj, attr):
             return getattr(obj, attr, *args)
-        return functools.reduce(_getattr, [obj] + attr.split('.'))
-    
+
+        return functools.reduce(_getattr, [obj] + attr.split("."))
+
     layer_and_axes_to_perm = {
         layer: tuple(
-            [perm_dict_copy[block], perm_dict_copy[map_prev_param_index[layer]]] + \
-            [None] * (rgetattr(model, layer).dim() - 2)
-        )[:rgetattr(model, layer).dim()]
+            [perm_dict_copy[block], perm_dict_copy[map_prev_param_index[layer]]]
+            + [None] * (rgetattr(model, layer).dim() - 2)
+        )[: rgetattr(model, layer).dim()]
         for layer, block in map_param_index.items()
     }
     perm_to_layers_and_axes = {
-        perm_id: 
-            [(layer, 0) for layer, block in map_param_index.items() if perm_dict[block] == perm_id] + \
-            [(layer, 1) for layer, block in map_prev_param_index.items() if perm_dict[block] == perm_id] 
-        for perm_id in set(perm_dict_copy.values()) if perm_id is not None
+        perm_id: [(layer, 0) for layer, block in map_param_index.items() if perm_dict_copy[block] == perm_id]
+        + [(layer, 1) for layer, block in map_prev_param_index.items() if perm_dict_copy[block] == perm_id]
+        for perm_id in set(perm_dict_copy.values())
+        if perm_id is not None
     }
-    
+
     return PermutationSpec(perm_to_layers_and_axes, layer_and_axes_to_perm)

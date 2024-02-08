@@ -38,7 +38,10 @@ class MyLightningModule(pl.LightningModule):
         self.val_accuracy = metric.clone()
         self.test_accuracy = metric.clone()
 
-        self.model = instantiate(model, num_classes=self.num_classes)
+        if isinstance(model, omegaconf.DictConfig):
+            model = instantiate(model, num_classes=self.num_classes)
+
+        self.model = model
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Method for the forward pass.
@@ -60,10 +63,15 @@ class MyLightningModule(pl.LightningModule):
 
     def step(self, x, y) -> Mapping[str, Any]:
 
-        logits = self(x)
+        output = self(x)
+        if isinstance(output, tuple):
+            logits, embeddings = output
+        else:
+            logits = output
+            embeddings = None
         loss = F.cross_entropy(logits, y)
 
-        return {"logits": logits.detach(), "loss": loss}
+        return {"logits": logits.detach(), "loss": loss, "embeddings": embeddings}
 
     def training_step(self, batch: Any, batch_idx: int) -> Mapping[str, Any]:
         x, y = self.unwrap_batch(batch)
@@ -144,6 +152,8 @@ class MyLightningModule(pl.LightningModule):
             - Tuple of dictionaries as described, with an optional 'frequency' key.
             - None - Fit will run without any optimizer.
         """
+        if "optimizer" not in self.hparams:
+            return [torch.optim.Adam(self.parameters(), lr=1e-3)]
         opt = hydra.utils.instantiate(self.hparams.optimizer, params=self.parameters(), _convert_="partial")
         if "lr_scheduler" not in self.hparams:
             return [opt]

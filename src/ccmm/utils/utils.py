@@ -3,7 +3,7 @@ import json
 import logging
 from pathlib import Path
 from pydoc import locate
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import hydra
 import matplotlib.colors as colors
@@ -15,6 +15,7 @@ from omegaconf import ListConfig
 from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 from scipy.interpolate import interp1d
 from scipy.misc import derivative
+from torch.utils.data import DataLoader
 
 from nn_core.common import PROJECT_ROOT
 from nn_core.serialization import load_model
@@ -153,14 +154,30 @@ def plot_cumulative_density(neuron_dists, min_value, num_radii):
     plt.show()
 
 
-def linear_interpolate_state_dicts(lam, t1, t2):
-    pylogger.info(f"Evaluating interpolated model with lambda: {lam}")
+def linear_interpolation(model_a, model_b, lamb):
+    return (1 - lamb) * model_a + lamb * model_b
 
-    t3 = copy.deepcopy(t2)
-    for p in t1:
-        t3[p] = (1 - lam) * t1[p] + lam * t2[p]
 
-    return t3
+def linear_interpolate(lambd: float, model_a: Union[MyLightningModule, Dict], model_b: Union[MyLightningModule, Dict]):
+    """
+    Linearly interpolate models given as LightningModules or as StateDicts.
+    """
+    pylogger.info(f"Evaluating interpolated model with lambda: {lambd}")
+
+    if isinstance(model_a, torch.Tensor) and isinstance(model_b, torch.Tensor):
+        # flat model parameters, interpolate them as vectors
+        return (1 - lambd) * model_a + lambd * model_b
+
+    if isinstance(model_a, MyLightningModule) and isinstance(model_b, MyLightningModule):
+        model_a = model_a.state_dict()
+        model_b = model_b.state_dict()
+
+    interpolated_model = copy.deepcopy(model_a)
+
+    for param_name in model_a:
+        interpolated_model[param_name] = (1 - lambd) * model_a[param_name] + (lambd) * model_b[param_name]
+
+    return interpolated_model
 
 
 def l2_norm_models(state_dict1, state_dict2):
@@ -396,3 +413,46 @@ def convert_to_rgb(image):
 
     # return np.array(image)
     return image
+
+
+def get_interpolated_loss_acc_curves(
+    model_a: MyLightningModule,
+    model_b: MyLightningModule,
+    lambdas: np.array,
+    ref_model: MyLightningModule,
+    loader: DataLoader,
+    trainer: pl.Trainer,
+):
+
+    interp_losses = []
+    interp_accs = []
+
+    for lambd in lambdas:
+        interp_results = evaluate_interpolated_model(
+            model_a=model_a, model_b=model_b, lambd=lambd, ref_model=ref_model, loader=loader, trainer=trainer
+        )
+
+        interp_losses.append(interp_results["loss/test"])
+        interp_accs.append(interp_results["acc/test"])
+
+    return interp_losses, interp_accs
+
+
+def evaluate_interpolated_model(
+    model_a: MyLightningModule,
+    model_b: MyLightningModule,
+    lambd: float,
+    ref_model: MyLightningModule,
+    loader: DataLoader,
+    trainer: pl.Trainer,
+):
+
+    interp_params = linear_interpolate(
+        model_a=model_a.model.state_dict(), model_b=model_b.model.state_dict(), lambd=lambd
+    )
+
+    ref_model.model.load_state_dict(interp_params)
+
+    test_results = trainer.test(ref_model, loader, verbose=False)[0]
+
+    return test_results

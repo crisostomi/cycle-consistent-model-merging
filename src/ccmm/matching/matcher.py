@@ -1,6 +1,6 @@
-import torch
-
 from typing import Literal
+
+import torch
 
 from ccmm.matching.frank_wolfe_matching import frank_wolfe_weight_matching
 from ccmm.matching.frank_wolfe_sync_matching import frank_wolfe_synchronized_matching
@@ -183,8 +183,8 @@ class SinkhornMatcher(Matcher):
         name,
         permutation_spec: PermutationSpec,
         example_input_shape,
-        lr,
-        criterion: Literal['L1', 'L2'] = 'L2',
+        lr: float,
+        criterion: Literal["L1", "L2"] = "L2",
         max_iter=100,
         verbose=False,
     ):

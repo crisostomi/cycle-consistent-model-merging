@@ -42,6 +42,7 @@ def frank_wolfe_synchronized_matching(
 
     models = {symb: copy.deepcopy(model).to(device) for symb, model in models.items()}
 
+    # TODO: switch back to model.model
     params = {symb: model.model.state_dict() for symb, model in models.items()}
     ref_params = params[symbols[0]]
 

@@ -11,6 +11,7 @@ trainer:
   gpus: 1
   precision: 32
 
+
 model_seeds:
   - 1
   - 2
