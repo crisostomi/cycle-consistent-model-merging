@@ -12,8 +12,8 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                "nn/dataset=cifar10", 
-                "nn.dataset_name=CIFAR10", 
+                "nn/dataset=cifar10",
+                "nn.dataset_name=CIFAR10",
                 "nn.module.model.input=3072"
             ]
         },
@@ -26,12 +26,24 @@
             "justMyCode": false,
         },
         {
+            "name": "ZipIt: merge",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/donato/miniconda3/envs/zipit/bin/python",
+            "justMyCode": false,
+            "cwd": "/home/donato/Code/Zipit"
+        },
+        {
             "name": "match two models",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/scripts/match_two_models.py",
             "console": "integratedTerminal",
-            "env": {"HYDRA_FULL_ERROR": "1"},
+            "env": {
+                "HYDRA_FULL_ERROR": "1"
+            },
             "justMyCode": false,
             "args": []
         },

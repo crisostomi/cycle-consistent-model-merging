@@ -111,12 +111,14 @@ class FrankWolfeSynchronizedMerger(Merger):
         permutation_spec: PermutationSpec,
         initialization_method,
         average_in_universe=False,
+        keep_soft_perms=False,
         max_iter=100,
     ):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
         self.average_in_universe = average_in_universe
         self.initialization_method = initialization_method
+        self.keep_soft_perms = keep_soft_perms
 
     def __call__(self, models, train_loader: Optional[DataLoader] = None):
         symbols = list(models.keys())
@@ -124,6 +126,7 @@ class FrankWolfeSynchronizedMerger(Merger):
         merged_model = copy.deepcopy(models[symbols[0]])
 
         combinations = get_all_symbols_combinations(symbols)
+        # TODO: understand if it's important for the combinations to be all possible ones or just the ones that are unique
         canonical_combinations = [(source, target) for (source, target) in combinations if source < target]  # NOQA
 
         models_permuted_to_universe = {symbol: copy.deepcopy(model) for symbol, model in models.items()}
@@ -132,16 +135,25 @@ class FrankWolfeSynchronizedMerger(Merger):
             models=models,
             perm_spec=self.permutation_spec,
             symbols=symbols,
-            combinations=combinations,
+            combinations=canonical_combinations,
             max_iter=self.max_iter,
             initialization_method=self.initialization_method,
+            keep_soft_perms=self.keep_soft_perms,
         )
 
         for symbol in symbols:
             perms_to_apply = {}
+
             for perm_name in perm_indices[symbol].keys():
-                perm = perm_indices_to_perm_matrix(perm_indices[symbol][perm_name]).T
-                perms_to_apply[perm_name] = perm_matrix_to_perm_indices(perm)
+                perm = perm_indices[symbol][perm_name]
+                if self.keep_soft_perms:
+                    perm = perm.T
+                    perm_to_apply = perm
+                else:
+                    perm = perm_indices_to_perm_matrix(perm).T
+                    perm_to_apply = perm_matrix_to_perm_indices(perm)
+                perms_to_apply[perm_name] = perm_to_apply
+
             updated_params = apply_permutation_to_statedict(
                 self.permutation_spec, perms_to_apply, models[symbol].model.state_dict()
             )

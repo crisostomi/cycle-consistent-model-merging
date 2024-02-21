@@ -52,12 +52,12 @@ def run(cfg: DictConfig) -> str:
     # (a, b), (a, c), (b, c), ...
     all_combinations = get_all_symbols_combinations(symbols)
     # combinations of the form (a, b), (a, c), (b, c), .. and not (b, a), (c, a) etc
+    # TODO: understand if it's important for the combinations to be all possible ones or just the ones that are unique
     canonical_combinations = [(source, target) for (source, target) in all_combinations if source < target]  # NOQA
 
     matcher = instantiate(cfg.matcher, permutation_spec=permutation_spec)
 
-    # permutations, perm_history = matcher(models, symbols=sorted_symbols, combinations=canonical_combinations)
-    permutations, perm_history = matcher(models, symbols=sorted_symbols, combinations=all_combinations)
+    permutations, perm_history = matcher(models, symbols=sorted_symbols, combinations=canonical_combinations)
 
     save_factored_permutations(permutations, cfg.permutations_path / "permutations.json")
 

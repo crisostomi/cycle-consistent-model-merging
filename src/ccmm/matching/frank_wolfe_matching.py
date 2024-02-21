@@ -9,7 +9,7 @@ from scipy.optimize import fminbound
 from tqdm import tqdm
 
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_indices_to_perm_matrix
+from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_cols, perm_indices_to_perm_matrix, perm_rows
 from ccmm.matching.weight_matching import solve_linear_assignment_problem, weight_matching
 from ccmm.utils.utils import ModelParams, to_np
 
@@ -445,38 +445,6 @@ def get_prev_permutation(params_name, perm_to_axes, perm_matrices):
             P_prev = other_perm
 
     return P_prev_name, P_prev
-
-
-def perm_rows(x, perm):
-    """
-    X ~ (n, d0) or (n, d0, d1) or (n, d0, d1, d2)
-    perm ~ (n, n)
-    """
-    assert x.shape[0] == perm.shape[0]
-    assert perm.dim() == 2 and perm.shape[0] == perm.shape[1]
-
-    input_dims = "jklm"[: x.dim()]
-    output_dims = "iklm"[: x.dim()]
-
-    ein_string = f"ij,{input_dims}->{output_dims}"
-
-    return torch.einsum(ein_string, perm, x)
-
-
-def perm_cols(x, perm):
-    """
-    X ~ (d0, n) or (d0, d1, n) or (d0, d1, d2, n)
-    perm ~ (n, n)
-    """
-    assert x.shape[1] == perm.shape[0]
-    assert perm.shape[0] == perm.shape[1]
-
-    x = x.transpose(1, 0)
-    perm = perm.transpose(1, 0)
-
-    permuted_x = perm_rows(x=x, perm=perm)
-
-    return permuted_x.transpose(1, 0)
 
 
 def update_perm_matrices(perm_matrices, proj_grads, step_size):

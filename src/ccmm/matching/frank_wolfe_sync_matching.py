@@ -9,15 +9,9 @@ from pytorch_lightning import LightningModule
 from scipy.optimize import fminbound
 from tqdm import tqdm
 
-from ccmm.matching.frank_wolfe_matching import (
-    collect_perm_sizes,
-    initialize_perm_matrices,
-    perm_cols,
-    perm_rows,
-    project_gradients,
-)
+from ccmm.matching.frank_wolfe_matching import collect_perm_sizes, initialize_perm_matrices, project_gradients
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.matching.utils import PermutationIndices, PermutationMatrix
+from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_cols, perm_rows
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
 
 pylogger = logging.getLogger(__name__)
@@ -30,6 +24,7 @@ def frank_wolfe_synchronized_matching(
     combinations: List[Tuple],
     max_iter: int,
     initialization_method: str,
+    keep_soft_perms: bool = False,
     device="cuda",
     verbose=False,
 ):
@@ -42,7 +37,6 @@ def frank_wolfe_synchronized_matching(
 
     models = {symb: copy.deepcopy(model).to(device) for symb, model in models.items()}
 
-    # TODO: switch back to model.model
     params = {symb: model.model.state_dict() for symb, model in models.items()}
     ref_params = params[symbols[0]]
 
@@ -123,7 +117,11 @@ def frank_wolfe_synchronized_matching(
             break
 
     perm_indices = {
-        symb: {p: solve_linear_assignment_problem(perm) for p, perm in perm_matrices[symb].items()} for symb in symbols
+        symb: {
+            p: perm if keep_soft_perms else solve_linear_assignment_problem(perm)
+            for p, perm in perm_matrices[symb].items()
+        }
+        for symb in symbols
     }
 
     return perm_indices, None
@@ -233,7 +231,7 @@ def line_search_step_sync(
 
     tot_obj = 0.0
 
-    for (symb_a, symb_b) in combinations:
+    for symb_a, symb_b in combinations:
         params_a, params_b = params[symb_a], params[symb_b]
         interpolated_perms = {symb_a: {}, symb_b: {}}
         for symb in [symb_a, symb_b]:
@@ -257,7 +255,7 @@ def line_search_step_sync(
 def get_all_pairs_global_obj_sync(params, combinations, perm_matrices, layers_and_axes_to_perms, device):
     tot_obj = 0.0
 
-    for (symb_a, symb_b) in combinations:
+    for symb_a, symb_b in combinations:
         params_a, params_b = params[symb_a], params[symb_b]
         tot_obj += get_global_obj_layerwise_sync(
             params_a, params_b, symb_a, symb_b, perm_matrices, layers_and_axes_to_perms, device

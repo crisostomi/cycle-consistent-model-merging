@@ -5,6 +5,7 @@ import logging
 from typing import Dict, List, Set, Tuple, Union
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from matplotlib.animation import FuncAnimation
 from pytorch_lightning import LightningModule
@@ -72,7 +73,7 @@ def get_inverse_permutations(permutations: Dict[str, PermutationIndices]) -> Dic
 
 def perm_indices_to_perm_matrix(perm_indices: PermutationIndices):
     n = len(perm_indices)
-    perm_matrix = torch.eye(n)[perm_indices.long()]
+    perm_matrix = torch.eye(n, device=perm_indices.device)[perm_indices.long()]
     return perm_matrix
 
 
@@ -138,6 +139,38 @@ def create_artificially_permuted_models(
     return artificial_models
 
 
+def perm_rows(x, perm):
+    """
+    X ~ (n, d0) or (n, d0, d1) or (n, d0, d1, d2)
+    perm ~ (n, n)
+    """
+    assert x.shape[0] == perm.shape[0]
+    assert perm.dim() == 2 and perm.shape[0] == perm.shape[1]
+
+    input_dims = "jklm"[: x.dim()]
+    output_dims = "iklm"[: x.dim()]
+
+    ein_string = f"ij,{input_dims}->{output_dims}"
+
+    return torch.einsum(ein_string, perm, x)
+
+
+def perm_cols(x, perm):
+    """
+    X ~ (d0, n) or (d0, d1, n) or (d0, d1, d2, n)
+    perm ~ (n, n)
+    """
+    assert x.shape[1] == perm.shape[0]
+    assert perm.shape[0] == perm.shape[1]
+
+    x = x.transpose(1, 0)
+    perm = perm.transpose(1, 0)
+
+    permuted_x = perm_rows(x=x, perm=perm)
+
+    return permuted_x.transpose(1, 0)
+
+
 def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
     """
     Apply to the parameter `param` all the permutations computed until the current step.
@@ -148,13 +181,28 @@ def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
     :param except_axis: axis to skip
     """
     for axis, perm_id in enumerate(perms_to_apply):
-        # we only want to apply permutations for the other axis so to have a linear problem
+
         if axis == except_axis or perm_id is None:
             continue
 
-        param = torch.index_select(param, axis, perm_matrices[perm_id].int())
+        perm = perm_matrices[perm_id].cpu()
+        if perm.dim() == 1:
+            # permute by indices
+            param = torch.index_select(param, axis, perm_matrices[perm_id].cpu().int())
+        else:
+            # permute by matrix
+            param = perm_tensor_by_perm_matrix(param, perm, axis)
 
     return param
+
+
+def perm_tensor_by_perm_matrix(tens, perm, axis):
+    assert axis == 0 or axis == 1
+    if axis == 0:
+        tens = perm_rows(tens, perm)
+    else:
+        tens = perm_cols(tens, perm)
+    return tens
 
 
 def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_params):
@@ -324,3 +372,66 @@ def permute_batchnorm(model, perm, perm_dict, map_param_index):
 
                 module.running_mean.copy_(module.running_mean[index, ...])
                 module.running_var.copy_(module.running_var[index, ...])
+
+
+def lerp(
+    t: float, v0: Union[np.ndarray, torch.Tensor], v1: Union[np.ndarray, torch.Tensor]
+) -> Union[np.ndarray, torch.Tensor]:
+    return (1 - t) * v0 + t * v1
+
+
+def slerp(
+    t: Union[float, np.ndarray],
+    v0: Union[np.ndarray, torch.Tensor],
+    v1: Union[np.ndarray, torch.Tensor],
+    DOT_THRESHOLD: float = 0.9995,
+    eps: float = 1e-8,
+):
+    """
+    Spherical linear interpolation
+
+    From: https://gist.github.com/dvschultz/3af50c40df002da3b751efab1daddf2c
+    Args:
+        t (float/np.ndarray): Float value between 0.0 and 1.0
+        v0 (np.ndarray): Starting vector
+        v1 (np.ndarray): Final vector
+        DOT_THRESHOLD (float): Threshold for considering the two vectors as
+                               colinear. Not recommended to alter this.
+    Returns:
+        v2 (np.ndarray): Interpolation vector between v0 and v1
+    """
+    if not isinstance(v0, np.ndarray):
+        v0 = v0.detach().cpu().float().numpy()
+    if not isinstance(v1, np.ndarray):
+        v1 = v1.detach().cpu().float().numpy()
+
+    # Copy the vectors to reuse them later
+    v0_copy = np.copy(v0)
+    v1_copy = np.copy(v1)
+
+    # Normalize the vectors to get the directions and angles
+    v0 = v0 / (np.linalg.norm(v0) + 1e-6)
+    v1 = v1 / (np.linalg.norm(v1) + 1e-6)
+
+    # Dot product with the normalized vectors (can't use np.dot in W)
+    dot = np.sum(v0 * v1)
+
+    # If absolute value of dot product is almost 1, vectors are ~colinear, so use lerp
+    if np.abs(dot) > DOT_THRESHOLD:
+        res = lerp(t, v0_copy, v1_copy)
+        return res
+
+    # Calculate initial angle between v0 and v1
+    theta_0 = np.arccos(dot)
+    sin_theta_0 = np.sin(theta_0)
+
+    # Angle at timestep t
+    theta_t = theta_0 * t
+    sin_theta_t = np.sin(theta_t)
+
+    # Finish the slerp algorithm
+    s0 = np.sin(theta_0 - theta_t) / sin_theta_0
+    s1 = sin_theta_t / sin_theta_0
+    res = s0 * v0_copy + s1 * v1_copy
+
+    return res

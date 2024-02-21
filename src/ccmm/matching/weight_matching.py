@@ -1,7 +1,8 @@
 import logging
 from enum import auto
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
+import numpy as np
 import torch
 from backports.strenum import StrEnum
 from scipy.optimize import linear_sum_assignment
@@ -79,6 +80,7 @@ def weight_matching(
     init_perm=None,
     alternate_diffusion_params=None,
     layer_iteration_order: LayerIterationOrder = LayerIterationOrder.RANDOM,
+    verbose=False,
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -87,6 +89,10 @@ def weight_matching(
     :param target: the parameters to match
     :param to_permute: the parameters to permute
     """
+
+    if not verbose:
+        pylogger.setLevel(logging.WARNING)
+
     params_a, params_b = fixed, permutee
 
     # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
@@ -235,17 +241,13 @@ def alternating_diffusion(
     return perm_indices
 
 
-def solve_linear_assignment_problem(sim_matrix: torch.Tensor, return_matrix=False):
-    ri, ci = linear_sum_assignment(sim_matrix.cpu().detach().numpy(), maximize=True)
+def solve_linear_assignment_problem(sim_matrix: Union[torch.Tensor, np.ndarray], return_matrix=False):
+    if isinstance(sim_matrix, torch.Tensor):
+        sim_matrix = sim_matrix.cpu().detach().numpy()
+
+    ri, ci = linear_sum_assignment(sim_matrix, maximize=True)
 
     assert (torch.tensor(ri) == torch.arange(len(ri))).all()
 
     indices = torch.tensor(ci)
     return indices if not return_matrix else perm_indices_to_perm_matrix(indices)
-
-
-# def compute_self_dist_matrix(W):
-#     #
-#     # W: (n, d)
-#     if W.dim() == 2:
-#         W = W.unsqueeze(0)
