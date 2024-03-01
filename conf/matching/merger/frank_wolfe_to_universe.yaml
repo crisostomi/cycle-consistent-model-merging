@@ -5,4 +5,4 @@ permutation_spec: ??
 max_iter: 200
 average_in_universe: True
 initialization_method: 'identity' # 'sinkhorn', 'identity' or 'random'
-keep_soft_perms: False # TODO: switch back to False
+keep_soft_perms: False

@@ -180,6 +180,7 @@ def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
     :param perm_matrices: the list of permutation matrices
     :param except_axis: axis to skip
     """
+
     for axis, perm_id in enumerate(perms_to_apply):
 
         if axis == except_axis or perm_id is None:
@@ -188,10 +189,18 @@ def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
         perm = perm_matrices[perm_id].cpu()
         if perm.dim() == 1:
             # permute by indices
-            param = torch.index_select(param, axis, perm_matrices[perm_id].cpu().int())
+            param = torch.index_select(param, axis, perm.int())
+
         else:
             # permute by matrix
             param = perm_tensor_by_perm_matrix(param, perm, axis)
+
+        if param.dim() == 2 and perm.dim() == 1:
+            assert torch.allclose(
+                torch.index_select(param, axis, perm.int()),
+                perm_tensor_by_perm_matrix(param, perm_indices_to_perm_matrix(perm), axis),
+                atol=1e-3,
+            )
 
     return param
 
@@ -201,7 +210,8 @@ def perm_tensor_by_perm_matrix(tens, perm, axis):
     if axis == 0:
         tens = perm_rows(tens, perm)
     else:
-        tens = perm_cols(tens, perm)
+        tens = perm_cols(tens, perm.T)
+
     return tens
 
 

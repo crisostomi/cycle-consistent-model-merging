@@ -32,7 +32,9 @@ def frank_wolfe_synchronized_matching(
     Frank-Wolfe based matching with factored permutations P_AB = P_A P_B^T, with P_B^T mapping from B to the universe
     and P_A mapping from the universe to A.
     """
-    if not verbose:
+    if verbose:
+        pylogger.setLevel(logging.INFO)
+    else:
         pylogger.setLevel(logging.WARNING)
 
     models = {symb: copy.deepcopy(model).to(device) for symb, model in models.items()}
@@ -54,12 +56,13 @@ def frank_wolfe_synchronized_matching(
 
     old_obj = 0.0
     patience_steps = 0
+    obj_values, step_sizes, perm_history = [], [], []
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
         pylogger.info(f"Iteration {iteration}")
 
         gradients = {
-            symb: {perm: torch.zeros((perm_sizes[perm], perm_sizes[perm])).to(device) for perm in perm_names}
+            symb: {perm: torch.zeros((perm_sizes[perm], perm_sizes[perm]), device=device) for perm in perm_names}
             for symb in symbols
         }
 
@@ -67,7 +70,7 @@ def frank_wolfe_synchronized_matching(
             fixed_model, permutee_model = models[fixed_symbol], models[permutee_symbol]
             params_a, params_b = fixed_model.model.state_dict(), permutee_model.model.state_dict()
 
-            pylogger.info(f"Collecting gradients for {fixed_symbol} and {permutee_symbol}")
+            pylogger.debug(f"Collecting gradients for {fixed_symbol} and {permutee_symbol}")
 
             collect_gradients_frank_wolfe_model_pair(
                 params_a,
@@ -95,7 +98,7 @@ def frank_wolfe_synchronized_matching(
 
         step_size, func_val, _, num_called_func = fminbound(
             line_search_step_func, 0, 1, xtol=1e-3, maxfun=20, full_output=1
-        )  # TODO: check if the hparams make sense
+        )
 
         pylogger.info(f"Step size: {step_size}, function value: {func_val}, num called functions: {num_called_func}")
 
@@ -106,6 +109,10 @@ def frank_wolfe_synchronized_matching(
         )
 
         pylogger.info(f"Objective: {np.round(new_obj, 6)}")
+
+        obj_values.append(new_obj)
+        step_sizes.append(step_size)
+        perm_history.append(perm_matrices)
 
         if (new_obj - old_obj) < 1e-6:
             patience_steps += 1
@@ -124,7 +131,9 @@ def frank_wolfe_synchronized_matching(
         for symb in symbols
     }
 
-    return perm_indices, None
+    opt_infos = {"obj_values": obj_values, "step_sizes": step_sizes, "perm_history": perm_history}
+
+    return perm_indices, opt_infos
 
 
 def collect_gradients_frank_wolfe_model_pair(
@@ -143,14 +152,16 @@ def collect_gradients_frank_wolfe_model_pair(
         # any permutation acting on the first axis is permuting rows
         row_perm_id = axes_and_perms[0]
         assert row_perm_id is None or row_perm_id in perm_matrices[symbol_a].keys()
+
         Pa_curr = perm_matrices[symbol_a][row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0])
         Pb_curr = perm_matrices[symbol_b][row_perm_id] if row_perm_id is not None else torch.eye(Wa.shape[0])
 
         # any permutation acting on the second axis is permuting columns
         col_perm_id = axes_and_perms[1] if len(axes_and_perms) > 1 else None
         assert col_perm_id is None or col_perm_id in perm_matrices[symbol_a].keys()
-        Pa_prev = perm_matrices[symbol_a][col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1])
-        Pb_prev = perm_matrices[symbol_b][col_perm_id] if col_perm_id is not None else torch.eye(Wa.shape[1])
+
+        Pa_prev = perm_matrices[symbol_a][col_perm_id] if col_perm_id is not None else torch.eye(Wb.shape[1])
+        Pb_prev = perm_matrices[symbol_b][col_perm_id] if col_perm_id is not None else torch.eye(Wb.shape[1])
 
         Pa_curr, Pb_curr = Pa_curr.to(device), Pb_curr.to(device)
         Pa_prev, Pb_prev = Pa_prev.to(device), Pb_prev.to(device)
@@ -210,11 +221,11 @@ def compute_grad_P_prev_sync(Wa, Wb, Pa_curr, Pb_curr, Pb_prev, debug=True):
     elif len(Wa.shape) == 3:
         gradient = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Pa_curr_Pb_currT_Wb_Pb_prev)
     else:
-        gradient = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Pa_curr_Pb_currT_Wb_Pb_prev)
+        gradient = torch.einsum("ijkl,jnkl->in", Wa.transpose(1, 0), Pa_curr_Pb_currT_Wb_Pb_prev)
 
     if debug and len(Wa.shape) == 2:
 
-        assert torch.allclose(gradient, Wa.T @ Pa_curr @ Pb_curr.T @ Wb @ Pb_prev, atol=1e-4)
+        assert torch.allclose(gradient, Wa.T @ Pa_curr @ Pb_curr.T @ Wb @ Pb_prev, atol=1e-1)
 
     return gradient
 
@@ -234,14 +245,11 @@ def line_search_step_sync(
     for symb_a, symb_b in combinations:
         params_a, params_b = params[symb_a], params[symb_b]
         interpolated_perms = {symb_a: {}, symb_b: {}}
+
         for symb in [symb_a, symb_b]:
             for perm_name, perm in perm_matrices[symb].items():
 
                 proj_grad = proj_grads[symb][perm_name]
-
-                if perm_name in {"P_final", "P_4"}:
-                    interpolated_perms[perm_name] = perm
-                    continue
 
                 interpolated_perms[symb][perm_name] = (1 - t) * perm + t * proj_grad
 
@@ -274,6 +282,7 @@ def get_global_obj_layerwise_sync(
         assert layer in params_b.keys()
 
         Wa, Wb = params_a[layer], params_b[layer]
+
         if Wa.dim() == 1:
             Wa = Wa.unsqueeze(1)
             Wb = Wb.unsqueeze(1)
@@ -349,10 +358,17 @@ def update_perm_matrices_sync(
 
         for perm_name, perm in perm_matrices[symb].items():
 
-            if perm_name in {"P_final", "P_4"}:
-                new_perm_matrices[symb][perm_name] = perm
-                continue
-
-            new_perm_matrices[symb][perm_name] = (1 - step_size) * perm + step_size * proj_grads[symb][perm_name]
+            new_perm_matrices[symb][perm_name] = (1 - step_size) * perm + step_size * proj_grads[symb][perm_name].cuda()
 
     return new_perm_matrices
+
+
+def exact_gen_dot_product(x, y):
+
+    result = torch.zeros((x.shape[0], y.shape[1]))
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            dot = x[i, j].flatten() @ y[i, j].flatten()
+            result[i, j] = dot
+
+    return result

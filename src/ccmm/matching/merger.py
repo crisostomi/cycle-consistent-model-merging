@@ -146,12 +146,14 @@ class FrankWolfeSynchronizedMerger(Merger):
 
             for perm_name in perm_indices[symbol].keys():
                 perm = perm_indices[symbol][perm_name]
+
                 if self.keep_soft_perms:
                     perm = perm.T
                     perm_to_apply = perm
                 else:
                     perm = perm_indices_to_perm_matrix(perm).T
                     perm_to_apply = perm_matrix_to_perm_indices(perm)
+
                 perms_to_apply[perm_name] = perm_to_apply
 
             updated_params = apply_permutation_to_statedict(

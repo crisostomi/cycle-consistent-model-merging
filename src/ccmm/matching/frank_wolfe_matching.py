@@ -36,7 +36,7 @@ def frank_wolfe_weight_matching(
     params_a, params_b = fixed, permutee
 
     # FOR MLP
-    # ps.perm_to_layers_and_axes["P_4"] = [("layer4.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_final"] = [("layer4.weight", 0)]
 
     # FOR RESNET
     ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
@@ -198,7 +198,7 @@ def initialize_perm_matrices(
     elif initialization_method == "random":
         return {p: torch.rand(n, n).to(device) for p, n in perm_sizes.items()}
     elif initialization_method == "sinkhorn":
-        return {p: sinkhorn_knopp(torch.rand(n, n), device=device) for p, n in perm_sizes.items()}
+        return {p: sinkhorn_knopp(initialize_perturbed_uniform(n)) for p, n in perm_sizes.items()}
     elif initialization_method == "LAP":
         perm_indices = weight_matching(perm_spec, fixed, permutee)
         return {p: perm_indices_to_perm_matrix(perm_indices[p]).to(device) for p in perm_indices.keys()}
@@ -232,7 +232,7 @@ def line_search_step(
     for perm_name, perm in perm_matrices.items():
         proj_grad = proj_grads[perm_name]
 
-        if perm_name in {"P_final", "P_4"}:
+        if perm_name == "P_final":
             interpolated_perms[perm_name] = perm
             continue
 
@@ -290,8 +290,8 @@ def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_ax
         Wa, Wb = params_a[layer], params_b[layer]
         Wa, Wb = Wa.to(device), Wb.to(device)
         if Wa.dim() == 1:
-            Wa = Wa.unsqueeze(1)  # / torch.norm(Wa)
-            Wb = Wb.unsqueeze(1)  # / torch.norm(Wb)
+            Wa = Wa.unsqueeze(1)
+            Wb = Wb.unsqueeze(1)
 
         # any permutation acting on the first axis is permuting rows
         row_perm_id = axes_and_perms[0]
@@ -452,7 +452,7 @@ def update_perm_matrices(perm_matrices, proj_grads, step_size):
 
     for perm_name, perm in perm_matrices.items():
 
-        if perm_name in {"P_final", "P_4"}:
+        if perm_name == "P_final":
             new_perm_matrices[perm_name] = perm
             continue
 
@@ -464,7 +464,7 @@ def update_perm_matrices(perm_matrices, proj_grads, step_size):
     return new_perm_matrices
 
 
-def sinkhorn_knopp(matrix, tol=1e-10, max_iterations=1000, device="cpu"):
+def sinkhorn_knopp(matrix, tol=1e-8, max_iterations=10000, device="cuda"):
     """
     Applies the Sinkhorn-Knopp algorithm to make a non-negative matrix doubly stochastic.
 
@@ -484,25 +484,61 @@ def sinkhorn_knopp(matrix, tol=1e-10, max_iterations=1000, device="cpu"):
     if R != C:
         raise ValueError("Matrix must be square.")
 
-    # Normalize the matrix so that all elements sum to 1
-    matrix = matrix / (matrix.sum() + 1e-16)
-    matrix = matrix.to(device)
+    matrix += 1e-6
 
-    # Initialize row and column scaling factors
-    row_scale = torch.ones(R).to(device)
-    col_scale = torch.ones(C).to(device)
+    for iter in range(max_iterations):
+        matrix /= matrix.sum(dim=1, keepdims=True)
 
-    for _ in range(max_iterations):
-        # Scale rows
-        row_scale = 1 / (torch.mv(matrix, col_scale) + 1e-16)
-        matrix = torch.diag(row_scale).mm(matrix)
-
-        # Scale columns
-        col_scale = 1 / (torch.mv(matrix.t(), row_scale) + 1e-16)
-        matrix = matrix.mm(torch.diag(col_scale))
+        matrix /= matrix.sum(dim=0, keepdims=True)
 
         # Check if matrix is close enough to doubly stochastic
         if torch.all(torch.abs(matrix.sum(dim=0) - 1) < tol) and torch.all(torch.abs(matrix.sum(dim=1) - 1) < tol):
+            pylogger.debug(f"Sinkhorn-Knopp algorithm converged after {iter} iterations.")
+
             return matrix
 
+    row_diff = torch.abs(matrix.sum(dim=0) - 1).sum()
+    col_diff = torch.abs(matrix.sum(dim=1) - 1).sum()
+    pylogger.debug(
+        f"Sinkhorn-Knopp algorithm did not converge, row_diff: {row_diff.item()}, col_diff: {col_diff.item()}"
+    )
+
     return matrix
+
+
+def initialize_perturbed_uniform(n, device="cuda"):
+    # Start with a uniform matrix
+    A = torch.ones((n, n), device=device) / n
+
+    # Apply a small random perturbation
+    perturbation = torch.rand((n, n), device=device) * 0.01 / n
+    A += perturbation
+
+    # Ensure A remains non-negative
+    A = torch.clip(A, min=0, max=None)
+
+    return A
+
+
+# def sinkhorn_knopp(matrix, tol=1e-8, max_iterations=100000, device="cuda"):
+#     matrix = matrix.to(device)
+
+#     log_A = torch.log(matrix)
+
+#     for _ in range(max_iterations):
+#         # Row normalization in log space
+#         log_A -= log_A.exp().sum(dim=1, keepdims=True).log()
+
+#         # Column normalization in log space
+#         log_A -= log_A.exp().sum(dim=0, keepdims=True).log()
+
+#         # Convergence check (optional)
+#         if (
+#             torch.max(torch.abs(log_A.exp().sum(axis=1) - 1)) < tol
+#             and torch.max(torch.abs(log_A.exp().sum(axis=0) - 1)) < tol
+#         ):
+#             pylogger.info(f"Sinkhorn-Knopp algorithm converged after {_} iterations.")
+#             return log_A.exp()
+
+#     pylogger.info("Sinkhorn-Knopp algorithm did not converge.")
+#     return log_A.exp()

@@ -456,3 +456,15 @@ def evaluate_interpolated_model(
     test_results = trainer.test(ref_model, loader, verbose=False)[0]
 
     return test_results
+
+
+def cumulative_sum(arr):
+    cum_sum = []
+    current_sum = 0
+
+    for i in range(len(arr)):
+        current_sum += arr[i]
+
+        cum_sum.append(current_sum)
+
+    return cum_sum
