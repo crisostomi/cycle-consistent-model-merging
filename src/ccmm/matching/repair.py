@@ -9,6 +9,42 @@ from ccmm.models.resnet import ResNet
 from ccmm.utils.utils import fuse_batch_norm_into_conv
 
 
+def repair_model(model_to_repair, models, train_loader):
+
+    model_to_repair = copy.deepcopy(model_to_repair)
+
+    repaired_model = make_tracked_net(model_to_repair).cuda()
+
+    wrapped_models = [make_tracked_net(model).cuda() for model in models.values()]
+
+    for i, model in enumerate(wrapped_models):
+        train_loader = train_loader if not isinstance(train_loader, List) else train_loader[i + 1]
+        reset_bn_stats(model.cuda(), loader=train_loader, epochs=1)
+
+    compute_goal_statistics(repaired_model, wrapped_models)
+
+    train_loader_merged = train_loader if not isinstance(train_loader, List) else train_loader[0]
+    reset_bn_stats(repaired_model.cuda(), loader=train_loader_merged, epochs=1)
+
+    repaired_model = fuse_tracked_net(repaired_model)
+
+    if isinstance(model_to_repair.model, ResNet):
+        kwargs = {
+            "depth": repaired_model.model.depth,
+            "widen_factor": repaired_model.model.widen_factor,
+            "num_classes": repaired_model.model.num_classes,
+        }
+        repaired_model_correct_class = RepairedResNet(**kwargs).cuda().eval()
+        repaired_model_correct_class.load_state_dict(repaired_model.model.state_dict())
+
+        model_to_repair.model = repaired_model_correct_class
+        model_to_repair.hparams["model"]["_target_"] = "ccmm.models.repaired_resnet.RepairedResNet"
+
+        return model_to_repair
+
+    return repaired_model
+
+
 def replace_conv_layers(module):
     for name, child in module.named_children():
         if isinstance(child, nn.Conv2d):
@@ -24,6 +60,7 @@ def make_tracked_net(model):
     tracked_model = copy.deepcopy(model)
     if isinstance(tracked_model.model, ResNet):
         tracked_model = add_resnet_junctures(tracked_model)
+
     replace_conv_layers(tracked_model)
 
     return tracked_model.eval()
@@ -99,42 +136,6 @@ def compute_goal_statistics(model_to_repair, endpoint_models):
 
         # turn rescaling on
         m_interp.rescale = True
-
-
-def repair_model(model_to_repair, models, train_loader):
-
-    model_to_repair = copy.deepcopy(model_to_repair)
-
-    repaired_model = make_tracked_net(model_to_repair).cuda()
-
-    wrapped_models = [make_tracked_net(model).cuda() for model in models.values()]
-
-    for i, model in enumerate(wrapped_models):
-        train_loader = train_loader if not isinstance(train_loader, List) else train_loader[i + 1]
-        reset_bn_stats(model.cuda(), loader=train_loader, epochs=1)
-
-    compute_goal_statistics(repaired_model, wrapped_models)
-
-    train_loader_merged = train_loader if not isinstance(train_loader, List) else train_loader[0]
-    reset_bn_stats(repaired_model.cuda(), loader=train_loader_merged, epochs=1)
-
-    repaired_model = fuse_tracked_net(repaired_model)
-
-    if isinstance(model_to_repair.model, ResNet):
-        kwargs = {
-            "depth": repaired_model.model.depth,
-            "widen_factor": repaired_model.model.widen_factor,
-            "num_classes": repaired_model.model.num_classes,
-        }
-        repaired_model_correct_class = RepairedResNet(**kwargs).cuda().eval()
-        repaired_model_correct_class.load_state_dict(repaired_model.model.state_dict())
-
-        model_to_repair.model = repaired_model_correct_class
-        model_to_repair.hparams["model"]["_target_"] = "ccmm.models.repaired_resnet.RepairedResNet"
-
-        return model_to_repair
-
-    return repaired_model
 
 
 def fuse_batch_norm_into_conv_recursive(module):

@@ -5,7 +5,7 @@ core:
   version: 0.0.1
   tags:
     - merge_n_models
-    - dev
+    - rebuttal
 
 defaults:
   - hydra: default

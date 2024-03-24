@@ -228,34 +228,43 @@ class FrankWolfeToReferenceMerger(Merger):
 
 
 class GitRebasinPairwiseMerger(Merger):
-    def __init__(self, name, permutation_spec: PermutationSpec, max_iter=100):
+    def __init__(self, name, permutation_spec: PermutationSpec, max_iter=100, ref_model_symbol="a"):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
+        self.ref_model_symbol = ref_model_symbol
 
-    def __call__(self, models: Dict[str, LightningModule], train_loader: Optional[DataLoader] = None):
-        model_params = [model.model.state_dict() for model in models.values()]
-        num_models = len(model_params)
-        ref_model_id = 0
-        ref_model_params = model_params[ref_model_id]
+    def __call__(self, models: Dict[str, LightningModule], train_loader: Optional[DataLoader] = None, repair=True):
 
-        other_model_ids = [i for i in range(num_models) if i != ref_model_id]
+        model_params = {symb: model.model.state_dict() for symb, model in models.items()}
 
-        for other_model_id in other_model_ids:
+        symbols = sorted(list(models.keys()))
 
-            other_model_params = model_params[other_model_id]
+        ref_model_params = model_params[self.ref_model_symbol]
+
+        other_model_symb = [symb for symb in symbols if symb != self.ref_model_symbol]
+        models_permuted_to_ref = {symbol: copy.deepcopy(model) for symbol, model in models.items()}
+
+        for other_model_symb in other_model_symb:
+
+            other_model_params = model_params[other_model_symb]
 
             permutation = weight_matching(
-                self.permutation_spec,
-                fixed=ref_model_params,
-                permutee=other_model_params,
+                self.permutation_spec, fixed=ref_model_params, permutee=other_model_params, verbose=True
             )
 
             other_model_params = apply_permutation_to_statedict(self.permutation_spec, permutation, other_model_params)
 
-            model_params[other_model_id] = other_model_params
+            models_permuted_to_ref[other_model_symb].model.load_state_dict(other_model_params)
+
+            model_params[other_model_symb] = other_model_params
 
         mean_params = average_models(model_params)
         merged_model = models[list(models.keys())[0]]
         merged_model.model.load_state_dict(mean_params)
+
+        if repair:
+            repaired_model = repair_model(merged_model, models_permuted_to_ref, train_loader)
+
+            return merged_model, repaired_model
 
         return merged_model

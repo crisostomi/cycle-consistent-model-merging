@@ -13,7 +13,7 @@ defaults:
   - hydra: default
   - matching: match_n_tasks
   - dataset: cifar100_tasks
-  - model: resnet18_pt
+  - model: resnet20
   - nn: n_tasks
   - train: resnet
   - _self_ # as last argument to allow the override of parameters via this main config

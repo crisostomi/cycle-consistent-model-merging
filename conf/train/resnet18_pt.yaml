@@ -5,7 +5,7 @@ trainer:
   fast_dev_run: False
   gpus: 1
   precision: 32
-  max_epochs: 20
+  max_epochs: 250
   max_steps: -1
   accumulate_grad_batches: 1
   num_sanity_val_steps: 2
@@ -18,7 +18,7 @@ restore:
   mode: continue # null, finetune, hotstart, continue
 
 monitor:
-  metric: 'loss/train'
+  metric: 'loss/val'
   mode: 'min'
 
 callbacks:
