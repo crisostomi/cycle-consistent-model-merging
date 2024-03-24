@@ -226,6 +226,7 @@ results/
 multirun/
 
 # PROJECT SPECIFIC
+**/lightning_logs/**
 /lightning_logs/
 ```
 **/artifacts/**
