@@ -31,16 +31,17 @@ module:
     norm_layer: ln
 
   optimizer:
-    _target_: torch.optim.SGD
-    lr: 0.1
-    momentum: 0.9
-    weight_decay: 1e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
+    _target_: torch.optim.Adam
+    # _target_: torch.optim.SGD
+    # lr: 0.1
+    # momentum: 0.9
+    # weight_decay: 1e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
 
 
-  lr_scheduler:
-    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
-    warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
-    max_epochs: ${train.trainer.max_epochs}
-    warmup_start_lr: 1e-6
-    eta_min: 0.0
-    last_epoch: -1
+  # lr_scheduler:
+  #   _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+  #   warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
+  #   max_epochs: ${train.trainer.max_epochs}
+  #   warmup_start_lr: 1e-6
+  #   eta_min: 0.0
+  #   last_epoch: -1

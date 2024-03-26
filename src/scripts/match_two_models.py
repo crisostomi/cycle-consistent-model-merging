@@ -31,7 +31,7 @@ def run(cfg: DictConfig) -> str:
     symbols_to_seed: Dict[int, str] = {map_model_seed_to_symbol(seed): seed for seed in cfg.model_seeds}
 
     artifact_path = (
-        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.dataset.name}_{core_cfg.model.model_identifier}_{seed}:v0"
     )
 
     # {a: model_a, b: model_b, c: model_c, ..}
@@ -68,12 +68,13 @@ def run(cfg: DictConfig) -> str:
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
 
-    for past_perm_ind, past_perm in enumerate(perm_history):
-        past_perm = {"a": {"b": past_perm}, "b": {"a": {k: None for k in past_perm.keys()}}}
-        save_permutations(past_perm, cfg.permutations_path / f"history/{past_perm_ind}.json")
+    if perm_history:
+        for past_perm_ind, past_perm in enumerate(perm_history):
+            past_perm = {"a": {"b": past_perm}, "b": {"a": {k: None for k in past_perm.keys()}}}
+            save_permutations(past_perm, cfg.permutations_path / f"history/{past_perm_ind}.json")
 
-    if cfg.plot_perm_history:
-        plot_permutation_history_animation(perm_history, cfg)
+        if cfg.plot_perm_history:
+            plot_permutation_history_animation(perm_history, cfg)
 
 
 @hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")

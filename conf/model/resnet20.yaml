@@ -2,8 +2,10 @@ name: ResNet
 widen_factor: 2
 depth: 22
 num_classes: ${dataset.num_classes}
+norm_layer: bn
 
-model_identifier: ${model.name}${model.depth}_${model.widen_factor} #_cifar100 #_bn
+model_identifier: ${model.name}${model.depth}_${model.widen_factor}_${model.norm_layer} #_cifar100 #_bn
 
 permutation_spec_builder:
   _target_: ccmm.matching.permutation_spec.ResNet20PermutationSpecBuilder
+  norm_layer: ${model.norm_layer}

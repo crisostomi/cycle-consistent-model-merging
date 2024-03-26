@@ -53,7 +53,7 @@ def run(cfg: DictConfig) -> str:
     all_combinations = get_all_symbols_combinations(symbols)
 
     artifact_path = (
-        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:v0"
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.dataset.name}_{core_cfg.model.model_identifier}_{seed}:v0"
     )
 
     updated_params = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
@@ -200,7 +200,7 @@ def compute_loss_barrier(losses):
 
 
 # matching_n_models, matching
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching_n_models", version_base="1.1")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="matching", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

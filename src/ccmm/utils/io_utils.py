@@ -9,14 +9,14 @@ from ccmm.data.my_dataset_dict import MyDatasetDict
 from ccmm.utils.utils import convert_to_rgb
 
 
-def load_data(cfg):
+def load_hf_dataset(ref, train_split, test_split, use_cached):
     DatasetParams = namedtuple("DatasetParams", ["name", "fine_grained", "train_split", "test_split", "hf_key"])
     dataset_params: DatasetParams = DatasetParams(
-        cfg.dataset.ref,
+        ref,
         None,
-        cfg.dataset.train_split,
-        cfg.dataset.test_split,
-        (cfg.dataset.ref,),
+        train_split,
+        test_split,
+        (ref,),
     )
     DATASET_KEY = "_".join(
         map(
@@ -25,7 +25,7 @@ def load_data(cfg):
         )
     )
     DATASET_DIR: Path = PROJECT_ROOT / "data" / "encoded_data" / DATASET_KEY
-    if not DATASET_DIR.exists() or not cfg.use_cached:
+    if not DATASET_DIR.exists() or not use_cached:
         train_dataset = load_dataset(
             dataset_params.name,
             split=dataset_params.train_split,
@@ -49,16 +49,25 @@ def save_dataset_to_disk(dataset, output_path):
     dataset.save_to_disk(output_path)
 
 
-def preprocess_dataset(dataset, cfg):
-    if cfg.dataset.label_key != cfg.label_key:
-        dataset = dataset.rename_column(cfg.dataset.label_key, cfg.label_key)
+def preprocess_dataset(dataset, img_key, label_key, dataset_img_key, dataset_label_key):
+    if dataset_label_key != label_key:
+        dataset = dataset.rename_column(dataset_label_key, label_key)
 
-    if cfg.dataset.image_key != cfg.image_key:
-        dataset = dataset.rename_column(cfg.dataset.image_key, cfg.image_key)
+    if dataset_img_key != img_key:
+        dataset = dataset.rename_column(dataset_img_key, img_key)
 
     # in case some images are not RGB, convert them to RGB
-    dataset = dataset.map(lambda x: {cfg.image_key: convert_to_rgb(x[cfg.image_key])}, desc="Converting to RGB")
-    dataset.set_format(type="numpy", columns=[cfg.image_key, cfg.label_key])
+    dataset = dataset.map(lambda x: {img_key: convert_to_rgb(x[img_key])}, desc="Converting to RGB")
+    dataset.set_format(type="numpy", columns=[img_key, label_key])
+
+    return dataset
+
+
+def convert_dataset_to_rgb(dataset, img_key, label_key):
+    # in case some images are not RGB, convert them to RGB
+    dataset = dataset.map(lambda x: {img_key: convert_to_rgb(x[img_key])}, desc="Converting to RGB")
+
+    dataset.set_format(type="numpy", columns=[img_key, label_key])
 
     return dataset
 

@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from functools import partial
 from typing import NamedTuple
 
 pylogger = logging.getLogger(__name__)
@@ -16,33 +17,47 @@ def conv_axes(name, p_rows, p_cols):
     }
 
 
-def norm_layer_axes(name, p):
+def layernorm_axes(name, p):
     return {f"{name}.weight": (p,), f"{name}.bias": (p,)}
+
+
+def batchnorm_axes(name, p):
+    return {
+        f"{name}.weight": (p,),
+        f"{name}.bias": (p,),
+        f"{name}.running_mean": (p,),
+        f"{name}.running_var": (p,),
+        f"{name}.num_batches_tracked": (None,),
+    }
 
 
 def dense_layer_axes(name, p_rows, p_cols, bias=True):
     return {f"{name}.weight": (p_rows, p_cols), f"{name}.bias": (p_rows,)}
 
 
-def easyblock_axes(name, p):
+def easyblock_axes(name, p, norm_layer="ln"):
     """Easy blocks that use a residual connection, without any change in the number of channels."""
+    norm_axes = layernorm_axes if norm_layer == "ln" else batchnorm_axes
+
     return {
         **conv_axes(f"{name}.conv1", p_rows=f"P_{name}_inner", p_cols=p),
-        **norm_layer_axes(f"{name}.bn1.layer_norm", f"P_{name}_inner"),
+        **norm_axes(f"{name}.bn1.layer_norm", f"P_{name}_inner"),
         **conv_axes(f"{name}.conv2", p_rows=p, p_cols=f"P_{name}_inner"),
-        **norm_layer_axes(f"{name}.bn2.layer_norm", p),
+        **norm_axes(f"{name}.bn2.layer_norm", p),
     }
 
 
-def shortcut_block_axes(name, p_rows, p_cols):
+def shortcut_block_axes(name, p_rows, p_cols, norm_layer="ln"):
     """This is for blocks that use a residual connection, but change the number of channels via a Conv."""
+    norm_axes = layernorm_axes if norm_layer == "ln" else batchnorm_axes
+
     return {
         **conv_axes(f"{name}.conv1", p_rows=f"P_{name}_inner", p_cols=p_cols),
-        **norm_layer_axes(f"{name}.bn1.layer_norm", f"P_{name}_inner"),
+        **norm_axes(f"{name}.bn1.layer_norm", f"P_{name}_inner"),
         **conv_axes(f"{name}.conv2", p_rows=p_rows, p_cols=f"P_{name}_inner"),
-        **norm_layer_axes(f"{name}.bn2.layer_norm", p_rows),
+        **norm_axes(f"{name}.bn2.layer_norm", p_rows),
         **conv_axes(f"{name}.shortcut.0", p_rows=p_rows, p_cols=p_cols),
-        **norm_layer_axes(f"{name}.shortcut.1.layer_norm", p_rows),
+        **norm_axes(f"{name}.shortcut.1.layer_norm", p_rows),
     }
 
 
@@ -92,39 +107,43 @@ class MLPPermutationSpecBuilder(PermutationSpecBuilder):
 
 
 class ResNet20PermutationSpecBuilder(PermutationSpecBuilder):
-    def __init__(self) -> None:
-        pass
+    def __init__(self, norm_layer="ln") -> None:
+        self.norm_layer = norm_layer
 
     def create_permutation(self) -> PermutationSpec:
+        norm_axes_fn = layernorm_axes if self.norm_layer == "ln" else batchnorm_axes
+        easyblock_fn = partial(easyblock_axes, norm_layer=self.norm_layer)
+        shortcut_block_fn = partial(shortcut_block_axes, norm_layer=self.norm_layer)
+
         axes_to_perm = {
             # initial conv, only permute its rows as the columns are the input channels
             **conv_axes("conv1", p_rows="P_bg0", p_cols=None),
             # batch norm after initial conv
-            **norm_layer_axes("bn1.layer_norm", p="P_bg0"),
+            **norm_axes_fn("bn1.layer_norm", p="P_bg0"),
             ##########
             # layer 1
-            **easyblock_axes("blockgroup1.block1", p="P_bg0"),
-            **easyblock_axes(
+            **easyblock_fn("blockgroup1.block1", p="P_bg0"),
+            **easyblock_fn(
                 "blockgroup1.block2",
                 p="P_bg0",
             ),
-            **easyblock_axes("blockgroup1.block3", p="P_bg0"),
+            **easyblock_fn("blockgroup1.block3", p="P_bg0"),
             ##########
             # layer 2
-            **shortcut_block_axes("blockgroup2.block1", p_rows="P_bg1", p_cols="P_bg0"),
-            **easyblock_axes(
+            **shortcut_block_fn("blockgroup2.block1", p_rows="P_bg1", p_cols="P_bg0"),
+            **easyblock_fn(
                 "blockgroup2.block2",
                 p="P_bg1",
             ),
-            **easyblock_axes("blockgroup2.block3", p="P_bg1"),
+            **easyblock_fn("blockgroup2.block3", p="P_bg1"),
             ##########
             # layer 3
-            **shortcut_block_axes("blockgroup3.block1", p_rows="P_bg2", p_cols="P_bg1"),
-            **easyblock_axes(
+            **shortcut_block_fn("blockgroup3.block1", p_rows="P_bg2", p_cols="P_bg1"),
+            **easyblock_fn(
                 "blockgroup3.block2",
                 p="P_bg2",
             ),
-            **easyblock_axes("blockgroup3.block3", p="P_bg2"),
+            **easyblock_fn("blockgroup3.block3", p="P_bg2"),
             ###########
             # output layer, only permute its columns as the rows are the output channels
             **dense_layer_axes("linear", p_rows=None, p_cols="P_bg2"),
@@ -143,7 +162,7 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
         return self.permutation_spec_from_axes_to_perm(
             {
                 **conv_axes("conv1", p_rows="P_bg0", p_cols=None),
-                **norm_layer_axes("bn1", "P_bg0"),
+                **layernorm_axes("bn1", "P_bg0"),
                 **shortcut_block_axes("layer1.0", "P_bg1", "P_bg0"),
                 **easyblock_axes(
                     "layer1.1",
@@ -177,7 +196,7 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
                 **easyblock_axes("layer3.5", "P_bg3"),
                 **easyblock_axes("layer3.6", "P_bg3"),
                 **easyblock_axes("layer3.7", "P_bg3"),
-                **norm_layer_axes("out_bn", "P_bg3"),
+                **layernorm_axes("out_bn", "P_bg3"),
                 **dense_layer_axes("linear", p_rows=None, p_cols="P_bg3"),
             }
         )

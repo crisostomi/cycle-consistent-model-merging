@@ -9,7 +9,14 @@ from scipy.optimize import fminbound
 from tqdm import tqdm
 
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_cols, perm_indices_to_perm_matrix, perm_rows
+from ccmm.matching.utils import (
+    PermutationIndices,
+    PermutationMatrix,
+    generalized_inner_product,
+    perm_cols,
+    perm_indices_to_perm_matrix,
+    perm_rows,
+)
 from ccmm.matching.weight_matching import solve_linear_assignment_problem, weight_matching
 from ccmm.utils.utils import ModelParams, to_np
 
@@ -25,6 +32,7 @@ def frank_wolfe_weight_matching(
     return_perm_history=False,
     num_trials=3,
     device="cuda",
+    keep_soft_perms: bool = False,
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -54,7 +62,7 @@ def frank_wolfe_weight_matching(
         seed_everything(seed)
 
         perm_matrices, perm_matrices_history, trial_obj = frank_wolfe_weight_matching_trial(
-            params_a, params_b, perm_sizes, initialization_method, ps, max_iter
+            params_a, params_b, perm_sizes, initialization_method, ps, max_iter, device=device
         )
         pylogger.info(f"Trial objective: {trial_obj}")
 
@@ -64,7 +72,9 @@ def frank_wolfe_weight_matching(
             best_perm_matrices = perm_matrices
             best_perm_matrices_history = perm_matrices_history
 
-    all_perm_indices = {p: solve_linear_assignment_problem(perm) for p, perm in best_perm_matrices.items()}
+    all_perm_indices = {
+        p: perm if keep_soft_perms else solve_linear_assignment_problem(perm) for p, perm in best_perm_matrices.items()
+    }
 
     if return_perm_history:
         return all_perm_indices, best_perm_matrices_history
@@ -103,60 +113,6 @@ def frank_wolfe_weight_matching_trial(
         )
 
         proj_grads = project_gradients(gradients, device)
-
-        line_search_step_func = partial(
-            line_search_step,
-            proj_grads=proj_grads,
-            perm_matrices=perm_matrices,
-            params_a=params_a,
-            params_b=params_b,
-            layers_and_axes_to_perms=perm_spec.layer_and_axes_to_perm,
-        )
-
-        step_size = fminbound(line_search_step_func, 0, 1)
-        pylogger.info(f"Step size: {step_size}")
-
-        perm_matrices = update_perm_matrices(perm_matrices, proj_grads, step_size)
-
-        new_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm)
-
-        pylogger.info(f"Objective: {np.round(new_obj, 6)}")
-
-        if (new_obj - old_obj) < 1e-4:
-            patience_steps += 1
-        else:
-            patience_steps = 0
-            old_obj = new_obj
-
-        if patience_steps >= 5:
-            break
-
-        perm_matrices_history.append(perm_matrices)
-
-    return perm_matrices, perm_matrices_history, new_obj
-
-
-# TODO:
-def projected_grad_descent_weight_matching_trial(
-    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100
-):
-    pass  # TODO
-    perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(
-        perm_sizes, initialization_method, params_a, params_b, perm_spec
-    )
-    perm_matrices_history = [perm_matrices]
-
-    old_obj = 0.0
-    patience_steps = 0
-
-    for iteration in tqdm(range(max_iter), desc="Weight matching"):
-        pylogger.debug(f"Iteration {iteration}")
-
-        gradients = weight_matching_gradient_fn(
-            params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm, perm_sizes
-        )
-
-        proj_grads = project_gradients(gradients)
 
         line_search_step_func = partial(
             line_search_step,
@@ -248,14 +204,17 @@ def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_
     tot_obj = 0.0
 
     for layer, axes_and_perms in layers_and_axes_to_perms.items():
+        if "num_batches_tracked" in layer or "running_mean" in layer or "running_var" in layer:
+            continue
+
         assert layer in params_a.keys()
         assert layer in params_b.keys()
 
         Wa, Wb = params_a[layer], params_b[layer]
         Wa, Wb = Wa.to(device), Wb.to(device)
         if Wa.dim() == 1:
-            Wa = Wa.unsqueeze(1)  # / torch.norm(Wa)
-            Wb = Wb.unsqueeze(1)  # / torch.norm(Wb)
+            Wa = Wa.unsqueeze(1)
+            Wb = Wb.unsqueeze(1)
 
         row_perm_id = axes_and_perms[0]
         assert row_perm_id is None or row_perm_id in perm_matrices.keys()
@@ -284,6 +243,9 @@ def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_ax
     gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p]), device=device) for p in perm_matrices.keys()}
 
     for layer, axes_and_perms in layers_and_axes_to_perms.items():
+        if "num_batches_tracked" in layer or "running_mean" in layer or "running_var" in layer:
+            continue
+
         assert layer in params_a.keys()
         assert layer in params_b.keys()
 
@@ -352,7 +314,9 @@ def compute_single_perm_obj_function(params_a, params_b, P_curr, P_curr_name, pe
 
 
 def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
-    # (P_i Wb_i) P_{i-1}^T
+    """
+    Compute (P_i Wb_i) P_{i-1}^T
+    """
 
     # (P_i Wb_i)
     Wb_perm = perm_rows(perm=P_curr, x=Wb)
@@ -361,17 +325,8 @@ def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
         # (P_i Wb_i) P_{i-1}^T
         Wb_perm = perm_cols(x=Wb_perm, perm=P_prev.T)
 
-    if len(Wa.shape) == 1:
-        # vector case, result is the dot product of the vectors A^T B
-        sim = Wa.T @ Wb_perm
-    elif len(Wa.shape) == 2:
-        # matrix case, result is the trace of the matrix product A^T B
-        sim = torch.trace(Wa.T @ Wb_perm)
-    elif len(Wa.shape) == 3:
-        # tensor case, trace of a generalized inner product where the last dimensions are multiplied and summed
-        sim = torch.trace(torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm))
-    else:
-        sim = torch.trace(torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm))
+    inner_product = generalized_inner_product(Wa.transpose(1, 0), Wb_perm)
+    sim = torch.trace(inner_product)
 
     if debug and len(Wa.shape) == 2:
         assert torch.allclose(
@@ -395,12 +350,7 @@ def compute_gradient_P_curr(Wa, Wb, P_prev, debug=True):
     # P_{l-1} B^T
     Wb_perm = perm_rows(x=Wb.transpose(1, 0), perm=P_prev)
 
-    if len(Wa.shape) == 2:
-        grad_P_curr = Wa @ Wb_perm
-    elif len(Wa.shape) == 3:
-        grad_P_curr = torch.einsum("ijk,jnk->in", Wa, Wb_perm)
-    else:
-        grad_P_curr = torch.einsum("ijkm,jnkm->in", Wa, Wb_perm)
+    grad_P_curr = generalized_inner_product(Wa, Wb_perm)
 
     if debug and len(Wa.shape) == 2:
         assert torch.allclose(grad_P_curr, Wa @ P_prev @ Wb.T, atol=1e-5)
@@ -420,12 +370,7 @@ def compute_gradient_P_prev(Wa, Wb, P_curr, debug=True):
     # (P_l B)
     Wb_perm = perm_rows(perm=P_curr, x=Wb)
 
-    if len(Wa.shape) == 2:
-        grad_P_prev = Wa.T @ Wb_perm
-    elif len(Wa.shape) == 3:
-        grad_P_prev = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_perm)
-    else:
-        grad_P_prev = torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_perm)
+    grad_P_prev = generalized_inner_product(Wa.transpose(1, 0), Wb_perm)
 
     if debug and len(Wa.shape) == 2:
         assert torch.allclose(grad_P_prev, Wa.T @ P_curr @ Wb, atol=1e-3)
@@ -542,3 +487,57 @@ def initialize_perturbed_uniform(n, device="cuda"):
 
 #     pylogger.info("Sinkhorn-Knopp algorithm did not converge.")
 #     return log_A.exp()
+
+
+# TODO:
+def projected_grad_descent_weight_matching_trial(
+    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100
+):
+    pass  # TODO
+    perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(
+        perm_sizes, initialization_method, params_a, params_b, perm_spec
+    )
+    perm_matrices_history = [perm_matrices]
+
+    old_obj = 0.0
+    patience_steps = 0
+
+    for iteration in tqdm(range(max_iter), desc="Weight matching"):
+        pylogger.debug(f"Iteration {iteration}")
+
+        gradients = weight_matching_gradient_fn(
+            params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm, perm_sizes
+        )
+
+        proj_grads = project_gradients(gradients)
+
+        line_search_step_func = partial(
+            line_search_step,
+            proj_grads=proj_grads,
+            perm_matrices=perm_matrices,
+            params_a=params_a,
+            params_b=params_b,
+            layers_and_axes_to_perms=perm_spec.layer_and_axes_to_perm,
+        )
+
+        step_size = fminbound(line_search_step_func, 0, 1)
+        pylogger.info(f"Step size: {step_size}")
+
+        perm_matrices = update_perm_matrices(perm_matrices, proj_grads, step_size)
+
+        new_obj = get_global_obj_layerwise(params_a, params_b, perm_matrices, perm_spec.layer_and_axes_to_perm)
+
+        pylogger.info(f"Objective: {np.round(new_obj, 6)}")
+
+        if (new_obj - old_obj) < 1e-4:
+            patience_steps += 1
+        else:
+            patience_steps = 0
+            old_obj = new_obj
+
+        if patience_steps >= 5:
+            break
+
+        perm_matrices_history.append(perm_matrices)
+
+    return perm_matrices, perm_matrices_history, new_obj

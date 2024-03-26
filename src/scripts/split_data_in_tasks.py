@@ -12,7 +12,7 @@ from nn_core.common import PROJECT_ROOT
 # Force the execution of __init__.py if this file is executed directly.
 import ccmm  # noqa
 from ccmm.data.my_dataset_dict import MyDatasetDict
-from ccmm.utils.io_utils import add_ids_to_dataset, load_data, preprocess_dataset, save_dataset_to_disk
+from ccmm.utils.io_utils import add_ids_to_dataset, load_hf_dataset, preprocess_dataset, save_dataset_to_disk
 
 pylogger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ def run(cfg: DictConfig):
 
     pylogger.info(f"Subdividing dataset {cfg.dataset.name}")
 
-    dataset = load_data(cfg)
+    dataset = load_hf_dataset(cfg.dataset.ref, cfg.dataset.train_split, cfg.dataset.test_split, cfg.dataset.use_cached)
 
-    dataset = preprocess_dataset(dataset, cfg)
+    dataset = preprocess_dataset(dataset, cfg.img_key, cfg.label_key, cfg.dataset.img_key, cfg.dataset.label_key)
 
     dataset = add_ids_to_dataset(dataset)
 

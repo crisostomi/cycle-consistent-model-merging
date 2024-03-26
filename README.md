@@ -48,6 +48,8 @@ All the scripts can be found under `src/scripts/`. Each script has a correspondi
 
 To change the matching technique, you have to change the `matcher` in `conf/matching/match_two_models.yaml`. Each matcher has its own config file in `conf/matching/matcher/`.
 
+To run all the pairs of models with different seeds, run `shell_scripts/run_all_seeds.sh`.
+
 ### Matching multiple models
 
 1. get the permutations to align the models (identified by their seed in the config) by running `match_n_models.py`. The config is `conf/matching_n_models.yaml` (see inside the config to see the subconfigs).

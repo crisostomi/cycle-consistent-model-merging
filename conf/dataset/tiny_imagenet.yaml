@@ -1,0 +1,39 @@
+
+data_path: ${oc.env:PROJECT_ROOT}/data
+name: "tiny_imagenet"
+
+num_classes: 200
+
+in_channels: 3
+input_shape:
+  - 1
+  - 3
+  - 64
+  - 64
+
+train:
+  _target_: torchvision.datasets.ImageFolder
+  root: ${oc.env:PROJECT_ROOT}/data/tiny_imagenet/train
+
+test:
+  _target_: torchvision.datasets.ImageFolder
+  root: ${oc.env:PROJECT_ROOT}/data/tiny_imagenet/test
+
+train_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: torchvision.transforms.RandomRotation
+      degrees: 30
+    - _target_: torchvision.transforms.RandomHorizontalFlip
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: torchvision.transforms.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+test_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: torchvision.transforms.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]

@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from ccmm.matching.frank_wolfe_matching import collect_perm_sizes, initialize_perm_matrices, project_gradients
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.matching.utils import PermutationIndices, PermutationMatrix, perm_cols, perm_rows
+from ccmm.matching.utils import PermutationIndices, PermutationMatrix, generalized_inner_product, perm_cols, perm_rows
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
 
 pylogger = logging.getLogger(__name__)
@@ -189,12 +189,7 @@ def compute_grad_P_curr_sync(Wa, Wb, Pa_prev, Pb_prev, Pb_curr, debug=True):
     # Pa_prev (Pb_prev^T (Wb^T Pb_curr))
     Pa_prev_Pb_prevT_WbT_Pb_curr = perm_rows(x=Wb_row_col_perm, perm=Pa_prev)
 
-    if len(Wa.shape) == 2:
-        gradient = Wa @ Pa_prev_Pb_prevT_WbT_Pb_curr
-    elif len(Wa.shape) == 3:
-        gradient = torch.einsum("ijk,jnk->in", Wa, Pa_prev_Pb_prevT_WbT_Pb_curr)
-    else:
-        gradient = torch.einsum("ijkm,jnkm->in", Wa, Pa_prev_Pb_prevT_WbT_Pb_curr)
+    gradient = generalized_inner_product(Wa, Pa_prev_Pb_prevT_WbT_Pb_curr)
 
     if debug and len(Wa.shape) == 2:
         assert torch.allclose(gradient, Wa @ Pa_prev @ Pb_prev.T @ Wb.T @ Pb_curr, atol=1e-2)
@@ -216,12 +211,7 @@ def compute_grad_P_prev_sync(Wa, Wb, Pa_curr, Pb_curr, Pb_prev, debug=True):
     # Pa_curr (Pb_curr^T (Wb Pb_prev))
     Pa_curr_Pb_currT_Wb_Pb_prev = perm_rows(x=Wb_row_col_perm, perm=Pa_curr)
 
-    if len(Wa.shape) == 2:
-        gradient = Wa.T @ Pa_curr_Pb_currT_Wb_Pb_prev
-    elif len(Wa.shape) == 3:
-        gradient = torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Pa_curr_Pb_currT_Wb_Pb_prev)
-    else:
-        gradient = torch.einsum("ijkl,jnkl->in", Wa.transpose(1, 0), Pa_curr_Pb_currT_Wb_Pb_prev)
+    gradient = generalized_inner_product(Wa.transpose(1, 0), Pa_curr_Pb_currT_Wb_Pb_prev)
 
     if debug and len(Wa.shape) == 2:
 
@@ -332,16 +322,8 @@ def compute_layer_similarity_sync(Wa, Wb, Pa_curr, Pb_curr, Pa_prev, Pb_prev):
     # Pa_curr (Pb_curr^T (Wb (Pa_prev Pb_prev^T)^T))
     Wb_Pa_prev_Pb_prevT_Pb_curr_Pa_curr = perm_rows(x=Wb_Pa_prev_Pb_prevT_Pb_curr, perm=Pa_curr)
 
-    if len(Wa.shape) == 2:
-        layer_similarity = torch.trace(Wa.T @ Wb_Pa_prev_Pb_prevT_Pb_curr_Pa_curr)
-    elif len(Wa.shape) == 3:
-        layer_similarity = torch.trace(
-            torch.einsum("ijk,jnk->in", Wa.transpose(1, 0), Wb_Pa_prev_Pb_prevT_Pb_curr_Pa_curr)
-        )
-    else:
-        layer_similarity = torch.trace(
-            torch.einsum("ijkm,jnkm->in", Wa.transpose(1, 0), Wb_Pa_prev_Pb_prevT_Pb_curr_Pa_curr)
-        )
+    inner_product = generalized_inner_product(Wa.transpose(1, 0), Wb_Pa_prev_Pb_prevT_Pb_curr_Pa_curr)
+    layer_similarity = torch.trace(inner_product)
 
     return layer_similarity
 

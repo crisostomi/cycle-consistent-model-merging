@@ -106,7 +106,7 @@ def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
     os.remove(temp_path + ".zip")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="mlp", version_base="1.1")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="resnet", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

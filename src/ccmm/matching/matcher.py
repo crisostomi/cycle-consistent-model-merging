@@ -125,12 +125,14 @@ class FrankWolfeMatcher(Matcher):
         num_trials,
         max_iter=100,
         return_perm_history=False,
+        keep_soft_perms=False,
     ):
         super().__init__(name, permutation_spec)
         self.max_iter = max_iter
         self.return_perm_history = return_perm_history
         self.initialization_method = initialization_method
         self.num_trials = num_trials
+        self.keep_soft_perms = keep_soft_perms
 
     def __call__(self, fixed, permutee):
         permutation_indices, perm_history = frank_wolfe_weight_matching(
@@ -141,6 +143,7 @@ class FrankWolfeMatcher(Matcher):
             num_trials=self.num_trials,
             return_perm_history=self.return_perm_history,
             initialization_method=self.initialization_method,
+            keep_soft_perms=self.keep_soft_perms,
         )
 
         if self.return_perm_history:

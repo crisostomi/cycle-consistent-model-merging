@@ -228,9 +228,10 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
             permuted_params[param_name] = param
             continue
 
-        if "running_mean" in param_name or "running_var" in param_name:
-            layer_name = ".".join(param_name.split(".")[:-1])
-            param_name_in_perm_dict = layer_name + ".weight"
+        # NEED TO FIX THIS FOR SINKHORN
+        # if "running_mean" in param_name or "running_var" in param_name:
+        #     layer_name = ".".join(param_name.split(".")[:-1])
+        #     param_name_in_perm_dict = layer_name + ".weight"
 
         assert (
             param_name_in_perm_dict in ps.layer_and_axes_to_perm
@@ -445,3 +446,24 @@ def slerp(
     res = s0 * v0_copy + s1 * v1_copy
 
     return res
+
+
+def generalized_inner_product(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the generalized inner product between two tensors A and B.
+
+    Args:
+        A: tensor
+        B: tensor
+
+    Returns:
+        result: tensor
+
+    """
+
+    A_dims = "ijkm"[0 : A.dim()]
+    B_dims = "jnkm"[0 : B.dim()]
+
+    result = torch.einsum(f"{A_dims}, {B_dims} -> in", A, B)
+
+    return result

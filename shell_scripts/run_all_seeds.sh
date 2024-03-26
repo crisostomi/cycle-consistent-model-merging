@@ -5,7 +5,7 @@ NC='\033[0m'
 
 model_pairs=("1 2" "2 3" "1 3")
 
-for approach in "git_rebasin" "frank_wolfe" "dummy"
+for approach in "frank_wolfe" "git_rebasin" "dummy"
 do
     for pair in "1,2" "2,3" "1,3"
     do
