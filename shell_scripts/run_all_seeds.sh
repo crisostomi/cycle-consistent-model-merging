@@ -7,7 +7,7 @@ model_pairs=("1 2" "2 3" "1 3")
 
 for approach in "frank_wolfe" "git_rebasin" "dummy"
 do
-    for pair in "1,2" "2,3" "1,3"
+    for pair in "1,2" # "2,3" "1,3"
     do
         for seed in 1 2 3 4
         do

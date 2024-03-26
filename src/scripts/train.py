@@ -66,6 +66,7 @@ def run(cfg: DictConfig) -> str:
     )
 
     pylogger.info("Starting training!")
+
     trainer.fit(model=model, datamodule=datamodule, ckpt_path=template_core.trainer_ckpt_path)
 
     upload_model_to_wandb(model, logger.experiment, cfg)

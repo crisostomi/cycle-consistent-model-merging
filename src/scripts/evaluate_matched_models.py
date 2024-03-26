@@ -53,7 +53,7 @@ def run(cfg: DictConfig) -> str:
     all_combinations = get_all_symbols_combinations(symbols)
 
     artifact_path = (
-        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.dataset.name}_{core_cfg.model.model_identifier}_{seed}:v0"
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.dataset.name}_{core_cfg.model.model_identifier}_{seed}:latest"
     )
 
     updated_params = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
@@ -110,7 +110,6 @@ def run(cfg: DictConfig) -> str:
             test_loader,
             lambdas,
             core_cfg,
-            logger,
         )
 
         log_results(results, lambdas)
@@ -122,9 +121,7 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-def evaluate_pair_of_models(
-    models, fixed_id, permutee_id, updated_params, train_loader, test_loader, lambdas, cfg, logger
-):
+def evaluate_pair_of_models(models, fixed_id, permutee_id, updated_params, train_loader, test_loader, lambdas, cfg):
     fixed_model = models[fixed_id]
     permutee_model = models[permutee_id]
 

@@ -1,8 +1,8 @@
 name: ResNet
-widen_factor: 2
+widen_factor: 16
 depth: 22
 num_classes: ${dataset.num_classes}
-norm_layer: bn
+norm_layer: ln
 
 model_identifier: ${model.name}${model.depth}_${model.widen_factor}_${model.norm_layer} #_cifar100 #_bn
 
