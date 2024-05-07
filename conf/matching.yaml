@@ -4,16 +4,13 @@ core:
   storage_dir: ${oc.env:PROJECT_ROOT}/storage
   version: 0.0.1
   tags:
-    - rebuttal
-    - match_two_models
-    - cifar100
-    - ResNet16
+    - dev
 
 defaults:
   - hydra: default
   - matching: match_two_models # match_then_sync
-  - dataset: cifar100 # cifar10, mnist
-  - model: resnet20 # resnet20, mlp, vgg
+  - dataset: cifar10 # cifar10, mnist
+  - model: resnet20 # resnet20, mlp, vgg, vit
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs

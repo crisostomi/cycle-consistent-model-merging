@@ -1,0 +1,18 @@
+# metadata specialised for each experiment
+core:
+  project_name: cycle-consistent-model-merging
+  storage_dir: ${oc.env:PROJECT_ROOT}/storage
+  version: 0.0.1
+  tags:
+    - train
+    - vit
+    - cifar10
+
+defaults:
+  - hydra: default
+  - nn: vit
+  - train: resnet
+  - dataset: cifar10
+  - _self_ # as last argument to allow the override of parameters via this main config
+#    Decomment this parameter to get parallel job running
+#  - hydra/launcher: joblib

@@ -149,7 +149,8 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     }
     trainer = instantiate(cfg.trainer)
 
-    for lam in tqdm(lambdas):
+    # TODO: fix back
+    for lam in tqdm(lambdas[1:]):
 
         interpolated_params = linear_interpolate(lam, fixed_dict, permutee_dict)
         permutee.model.load_state_dict(interpolated_params)

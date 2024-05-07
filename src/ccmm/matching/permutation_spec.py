@@ -1,3 +1,4 @@
+import copy
 import logging
 from collections import defaultdict
 from functools import partial
@@ -243,3 +244,105 @@ class VGG16PermutationSpecBuilder(PermutationSpecBuilder):
         }
 
         return self.permutation_spec_from_axes_to_perm(axes_to_perm)
+
+
+class ViTPermutationSpecBuilder(PermutationSpecBuilder):
+    def __init__(self, depth) -> None:
+        self.depth = depth
+
+    def create_permutation(self) -> PermutationSpec:
+
+        axes_to_perm = {
+            # layer norm
+            "to_patch_embedding.to_patch_tokens.1.weight": (None,),  # (3*c*16)
+            "to_patch_embedding.to_patch_tokens.1.bias": (None,),  # (3*c*16)
+            # linear
+            "to_patch_embedding.to_patch_tokens.2.weight": ("P_in", None),  # (dim, 3*c*16)
+            "to_patch_embedding.to_patch_tokens.2.bias": ("P_in",),  # dim
+            "pos_embedding": (None, None, "P_in"),  # (1, p+1, dim) probably P_transf_in or its own P
+            "cls_token": (None, None, "P_in"),  # (1, 1, dim) probably P_transf_in or its own P
+            **transformer_block_axes(self.depth, p_in="P_in", p_out="P_last"),
+            # layer norm
+            "mlp_head.0.weight": ("P_last",),  # (dim, )
+            "mlp_head.0.bias": ("P_last",),  # (dim,)
+            # linear
+            "mlp_head.1.bias": (None,),  # (num_classes)
+            "mlp_head.1.weight": (None, "P_last"),  # (num_classes, dim)
+        }
+
+        return self.permutation_spec_from_axes_to_perm(axes_to_perm)
+
+
+# class SpectralPermutationSpecBuilder(PermutationSpecBuilder):
+#     def __init__(self, num_hidden_layers: int):
+#         self.num_hidden_layers = num_hidden_layers
+
+#     def create_permutation_spec(self) -> PermutationSpec:
+#         L = self.num_hidden_layers
+#         assert L >= 1
+
+#         axes_to_perm = {
+#             "layer0.weight": ("P_0", None),
+#             **{f"layer{i}.0.weight": (f"P_{i}", f"P_{i-1}") for i in range(1, L)},
+#             **{f"layer{i}.0.bias": (f"P_{i}",) for i in range(L)},
+#             **{f'layer{i}.1.eigvals': (f'P_{i}',) for i in range(L)},
+#             **{f'layer{i}.1.weight': ??? },
+#             f"layer{L}.0.weight": (None, f"P_{L-1}"),
+#             f"layer{L}.0.bias": (None,),
+#             f'layer{L}.1.eigvals': (None,),
+#             f'layer{i}.1.weight': ???
+#         }
+
+#         return self.permutation_spec_from_axes_to_perm(axes_to_perm)
+
+
+def transformer_block_axes(depth, p_in, p_out):
+
+    all_axes = {}
+
+    for block_ind in range(depth):
+
+        block_out = p_out if block_ind == depth - 1 else f"P{block_ind}_out"
+        block_in = p_in if block_ind == 0 else f"P{block_ind-1}_out"
+
+        block_axes = {
+            # Attention
+            ## layer norm
+            f"transformer.layers.{block_ind}.0.norm.weight": (block_in,),  # (dim,)
+            f"transformer.layers.{block_ind}.0.norm.bias": (block_in,),  # (dim,)
+            f"transformer.layers.{block_ind}.0.temperature": (None,),  # (,)
+            # HEADS
+            f"transformer.layers.{block_ind}.0.to_q.weight": (f"P{block_ind}_attn_QK", block_in),  # (head_dim, dim)
+            f"transformer.layers.{block_ind}.0.to_k.weight": (f"P{block_ind}_attn_QK", block_in),  # (head_dim, dim)
+            f"transformer.layers.{block_ind}.0.to_v.weight": (None, block_in),  # (head_dim, dim)
+            # Attention out
+            f"transformer.layers.{block_ind}.0.to_out.0.weight": (
+                None,
+                None,  # f"P{block_ind}_attn_V",
+            ),  # (dim, dim)
+            f"transformer.layers.{block_ind}.0.to_out.0.bias": (None,),  # (dim,)
+            # shortcut
+            f"transformer.layers.{block_ind}.1.identity": (block_in, None),  # (dim, dim) # WORKS
+            # MLP
+            ## layer norm
+            f"transformer.layers.{block_ind}.2.net.0.weight": (None,),  # (dim, )
+            f"transformer.layers.{block_ind}.2.net.0.bias": (None,),  # (dim,)
+            ## linear 1
+            f"transformer.layers.{block_ind}.2.net.1.weight": (
+                f"P{block_ind}_mlp_out",
+                None,
+            ),  # (mlp_dim, dim)
+            f"transformer.layers.{block_ind}.2.net.1.bias": (f"P{block_ind}_mlp_out",),  # (mlp_dim,)
+            ## linear 2
+            f"transformer.layers.{block_ind}.2.net.4.weight": (
+                block_out,
+                f"P{block_ind}_mlp_out",
+            ),  # (dim, mlp_dim) # WORKS
+            f"transformer.layers.{block_ind}.2.net.4.bias": (block_out,),  # (dim,) # WORKS
+            # shortcut 2
+            f"transformer.layers.{block_ind}.3.identity": (None, block_out),  # (dim, dim) # WORKS
+        }
+
+        all_axes.update(block_axes)
+
+    return all_axes

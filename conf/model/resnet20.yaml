@@ -1,5 +1,5 @@
 name: ResNet
-widen_factor: 16
+widen_factor: 2
 depth: 22
 num_classes: ${dataset.num_classes}
 norm_layer: ln

@@ -1,5 +1,5 @@
 _target_: ccmm.matching.merger.GitRebasinPairwiseMerger
 name: 'git_rebasin'
 permutation_spec: ??
-max_iter: 100
-ref_model_symbol: a
+max_iter: 200
+ref_model_symbol: b

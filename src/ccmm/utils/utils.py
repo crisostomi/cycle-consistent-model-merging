@@ -1,6 +1,8 @@
 import copy
 import json
 import logging
+import time
+from functools import wraps
 from pathlib import Path
 from pydoc import locate
 from typing import Any, Dict, List, Tuple, Union
@@ -250,6 +252,8 @@ def load_model_from_info(model_info_path, seed=None, zipped=True):
 
 
 def load_model_from_artifact(run, artifact_path):
+    pylogger.info(f"Trying to load {artifact_path}")
+
     artifact = run.use_artifact(artifact_path)
     artifact.download()
 
@@ -468,3 +472,16 @@ def cumulative_sum(arr):
         cum_sum.append(current_sum)
 
     return cum_sum
+
+
+def timeit(func):
+    @wraps(func)
+    def timeit_wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(f"Function {func.__name__} Took {total_time:.4f} seconds")
+        return result
+
+    return timeit_wrapper

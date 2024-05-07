@@ -51,7 +51,7 @@ class ResNet(nn.Module):
 
         self.linear = nn.Linear(out_channels[3], num_classes)
 
-    def forward(self, x):
+    def forward(self, x, return_logits=False):
         out = F.relu(self.bn1(self.conv1(x)))
 
         # (B, 32, 32, 32)
@@ -64,6 +64,9 @@ class ResNet(nn.Module):
         out = reduce(out, "n c h w -> n c", "mean")
 
         out = self.linear(out)
+
+        if return_logits:
+            return out
 
         out = F.log_softmax(out, dim=1)
 

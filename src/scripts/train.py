@@ -93,7 +93,7 @@ def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
 
     model_class = model.__class__.__module__ + "." + model.__class__.__qualname__
 
-    artifact_name = f"{cfg.nn.module.model_name}_{cfg.train.seed_index}"
+    artifact_name = f"{cfg.dataset.name}_{cfg.nn.module.model_name}_{cfg.train.seed_index}"
 
     model_artifact = wandb.Artifact(
         name=artifact_name,
@@ -107,7 +107,7 @@ def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
     os.remove(temp_path + ".zip")
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="resnet", version_base="1.1")
+@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="vit", version_base="1.1")
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

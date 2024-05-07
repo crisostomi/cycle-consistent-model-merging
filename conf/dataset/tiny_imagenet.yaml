@@ -14,10 +14,14 @@ input_shape:
 train:
   _target_: torchvision.datasets.ImageFolder
   root: ${oc.env:PROJECT_ROOT}/data/tiny_imagenet/train
+  transform: ${dataset.train_transform}
+
 
 test:
   _target_: torchvision.datasets.ImageFolder
   root: ${oc.env:PROJECT_ROOT}/data/tiny_imagenet/test
+  transform: ${dataset.test_transform}
+
 
 train_transform:
   _target_: torchvision.transforms.Compose

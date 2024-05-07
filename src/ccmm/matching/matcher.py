@@ -9,6 +9,7 @@ from ccmm.matching.quadratic_matching import quadratic_weight_matching
 from ccmm.matching.sinkhorn_matching import sinkhorn_matching
 from ccmm.matching.synchronized_matching import synchronized_weight_matching
 from ccmm.matching.weight_matching import LayerIterationOrder, weight_matching
+from ccmm.utils.utils import timeit
 
 
 class Matcher:
@@ -49,6 +50,7 @@ class GitRebasinMatcher(Matcher):
         self.max_iter = max_iter
         self.layer_iteration_order = layer_iteration_order
 
+    @timeit
     def __call__(self, fixed, permutee):
         permutation_indices = weight_matching(
             ps=self.permutation_spec,
@@ -134,6 +136,7 @@ class FrankWolfeMatcher(Matcher):
         self.num_trials = num_trials
         self.keep_soft_perms = keep_soft_perms
 
+    @timeit
     def __call__(self, fixed, permutee):
         permutation_indices, perm_history = frank_wolfe_weight_matching(
             ps=self.permutation_spec,

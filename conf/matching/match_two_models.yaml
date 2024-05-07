@@ -1,5 +1,5 @@
 defaults:
-  - matcher: frank_wolfe # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic, dummy, frank_wolfe, sinhkorn
+  - matcher: git_rebasin # quadratic, git_rebasin, alternating_diffusion, synchronized, quadratic, dummy, frank_wolfe, sinhkorn
 
 seed_index: 1
 
@@ -18,7 +18,7 @@ model_seeds:
   # - 4
   # - 5
 
-num_interpolation_steps: 25
+num_interpolation_steps: 3
 
 batch_size: 200
 num_workers: 14
@@ -30,3 +30,4 @@ results_path: ${path:${oc.env:PROJECT_ROOT}/results/${dataset.name}/${matching.m
 plot_perm_history: False
 
 use_factored_permutations: False
+save_perm_history: False

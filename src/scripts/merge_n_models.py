@@ -36,7 +36,7 @@ def run(cfg: DictConfig) -> str:
     run = wandb.init(project=core_cfg.core.project_name, entity=core_cfg.core.entity, job_type="matching")
 
     artifact_path = (
-        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.model.model_identifier}_{seed}:latest"
+        lambda seed: f"{core_cfg.core.entity}/{core_cfg.core.project_name}/{core_cfg.dataset.name}_{core_cfg.model.model_identifier}_{seed}:latest"
     )
 
     # {a: model_a, b: model_b, c: model_c, ..}

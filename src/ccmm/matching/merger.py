@@ -16,7 +16,7 @@ from ccmm.matching.utils import (
     unfactor_permutations,
 )
 from ccmm.matching.weight_matching import PermutationSpec, weight_matching
-from ccmm.utils.utils import average_models, l2_norm_models
+from ccmm.utils.utils import average_models, l2_norm_models, timeit
 
 pylogger = logging.getLogger(__name__)
 
@@ -62,6 +62,16 @@ class GitRebasinMerger(Merger):
         self.max_iter = max_iter
 
     def __call__(self, models: Dict[str, LightningModule], train_loader: Optional[DataLoader] = None):
+
+        merged_model = self.merge_models(models)
+
+        repaired_model = repair_model(merged_model, models, train_loader)
+
+        return merged_model, repaired_model
+
+    @timeit
+    def merge_models(self, models):
+
         model_params = [model.model.state_dict() for model in models.values()]
         num_models = len(model_params)
 
@@ -99,9 +109,7 @@ class GitRebasinMerger(Merger):
         merged_model = models[list(models.keys())[0]]
         merged_model.model.load_state_dict(mean_params)
 
-        repaired_model = repair_model(merged_model, models, train_loader)
-
-        return merged_model, repaired_model
+        return merged_model
 
 
 class FrankWolfeSynchronizedMerger(Merger):
@@ -121,12 +129,19 @@ class FrankWolfeSynchronizedMerger(Merger):
         self.keep_soft_perms = keep_soft_perms
 
     def __call__(self, models, train_loader: Optional[DataLoader] = None):
+
+        merged_model, models_permuted_to_universe = self.merge_models(models)
+        repaired_model = repair_model(merged_model, models_permuted_to_universe, train_loader)
+
+        return merged_model, repaired_model
+
+    @timeit
+    def merge_models(self, models):
         symbols = list(models.keys())
 
         merged_model = copy.deepcopy(models[symbols[0]])
 
         combinations = get_all_symbols_combinations(symbols)
-        # TODO: understand if it's important for the combinations to be all possible ones or just the ones that are unique
         canonical_combinations = [(source, target) for (source, target) in combinations if source < target]  # NOQA
 
         models_permuted_to_universe = {symbol: copy.deepcopy(model) for symbol, model in models.items()}
@@ -168,9 +183,7 @@ class FrankWolfeSynchronizedMerger(Merger):
 
         merged_model.model.load_state_dict(merged_params)
 
-        repaired_model = repair_model(merged_model, models_permuted_to_universe, train_loader)
-
-        return merged_model, repaired_model
+        return merged_model, models_permuted_to_universe
 
 
 class FrankWolfeToReferenceMerger(Merger):

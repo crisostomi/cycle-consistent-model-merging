@@ -64,6 +64,11 @@ def run(cfg: DictConfig) -> str:
         for split in ["train", "test"]:
             logger.experiment.log({f"{metric}/{split}": results[split][f"{metric}/{split}"]})
 
+    # trainer = instantiate(cfg.trainer, max_epochs=100)
+    # trainer.fit(merged_model, train_loader)
+    # test_results = trainer.test(merged_model, test_loader)[0]
+    # print(test_results)
+
     if logger is not None:
         logger.log_configuration(model=merged_model, cfg=core_cfg)
         logger.experiment.finish()

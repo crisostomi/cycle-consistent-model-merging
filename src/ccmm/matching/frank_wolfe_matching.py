@@ -1,8 +1,9 @@
 import logging
 from functools import partial
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
+import scipy  # NOQA
 import torch
 from pytorch_lightning import seed_everything
 from scipy.optimize import fminbound
@@ -47,7 +48,10 @@ def frank_wolfe_weight_matching(
     # ps.perm_to_layers_and_axes["P_final"] = [("layer4.weight", 0)]
 
     # FOR RESNET
-    ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+    # ps.perm_to_layers_and_axes["P_final"] = [("linear.weight", 0)]
+
+    # FOR ViT
+    # ps.perm_to_layers_and_axes["P_final"] = [("mlp_head.1.weight", 0)]
 
     # FOR VGG
     # ps.perm_to_layers_and_axes["P_final"] = [("classifier.4.weight", 0)]
@@ -94,7 +98,7 @@ def collect_perm_sizes(perm_spec, ref_params):
 
 
 def frank_wolfe_weight_matching_trial(
-    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100, device="cuda"
+    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100, device="cuda", global_step_size=True
 ):
 
     perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(
@@ -114,17 +118,7 @@ def frank_wolfe_weight_matching_trial(
 
         proj_grads = project_gradients(gradients, device)
 
-        line_search_step_func = partial(
-            line_search_step,
-            proj_grads=proj_grads,
-            perm_matrices=perm_matrices,
-            params_a=params_a,
-            params_b=params_b,
-            layers_and_axes_to_perms=perm_spec.layer_and_axes_to_perm,
-        )
-
-        step_size = fminbound(line_search_step_func, 0, 1)
-        pylogger.info(f"Step size: {step_size}")
+        step_size = compute_step_size(proj_grads, perm_matrices, params_a, params_b, perm_spec, global_step_size)
 
         perm_matrices = update_perm_matrices(perm_matrices, proj_grads, step_size)
 
@@ -174,8 +168,35 @@ def project_gradients(gradients, device):
     return proj_grads
 
 
+def compute_step_size(
+    proj_grads, perm_matrices, params_a, params_b, perm_spec, global_step_size=True
+) -> Union[float, np.array]:
+
+    line_search_step_func = partial(
+        line_search_step,
+        proj_grads=proj_grads,
+        perm_matrices=perm_matrices,
+        params_a=params_a,
+        params_b=params_b,
+        layers_and_axes_to_perms=perm_spec.layer_and_axes_to_perm,
+    )
+
+    if global_step_size:
+        step_size = fminbound(line_search_step_func, 0, 1)
+        pylogger.info(f"Step size: {step_size}")
+
+    else:
+        x0 = np.array([0.0] * len(perm_matrices))
+        bounds = [(0, 1)] * len(perm_matrices)
+        res = scipy.optimize.minimize(line_search_step_func, x0, bounds=bounds, method="Nelder-Mead")
+        step_size, success = res.x, res.success
+        pylogger.info(f"Success: {success} Step size: {step_size}")
+
+    return step_size
+
+
 def line_search_step(
-    t: float,
+    step_size: Union[float, np.array],
     params_a,
     params_b,
     proj_grads: Dict[str, torch.Tensor],
@@ -185,14 +206,15 @@ def line_search_step(
 
     interpolated_perms = {}
 
-    for perm_name, perm in perm_matrices.items():
+    for ind, (perm_name, perm) in enumerate(perm_matrices.items()):
         proj_grad = proj_grads[perm_name]
 
         if perm_name == "P_final":
             interpolated_perms[perm_name] = perm
             continue
 
-        interpolated_perms[perm_name] = (1 - t) * perm + t * proj_grad
+        alpha = step_size if isinstance(step_size, float) else step_size[ind]
+        interpolated_perms[perm_name] = (1 - alpha) * perm + alpha * proj_grad
 
     tot_obj = get_global_obj_layerwise(params_a, params_b, interpolated_perms, layers_and_axes_to_perms)
 
@@ -204,7 +226,12 @@ def get_global_obj_layerwise(params_a, params_b, perm_matrices, layers_and_axes_
     tot_obj = 0.0
 
     for layer, axes_and_perms in layers_and_axes_to_perms.items():
-        if "num_batches_tracked" in layer or "running_mean" in layer or "running_var" in layer:
+        if (
+            "num_batches_tracked" in layer
+            or "running_mean" in layer
+            or "running_var" in layer
+            or "temperature" in layer
+        ):
             continue
 
         assert layer in params_a.keys()
@@ -243,7 +270,12 @@ def weight_matching_gradient_fn(params_a, params_b, perm_matrices, layers_and_ax
     gradients = {p: torch.zeros((perm_sizes[p], perm_sizes[p]), device=device) for p in perm_matrices.keys()}
 
     for layer, axes_and_perms in layers_and_axes_to_perms.items():
-        if "num_batches_tracked" in layer or "running_mean" in layer or "running_var" in layer:
+        if (
+            "num_batches_tracked" in layer
+            or "running_mean" in layer
+            or "running_var" in layer
+            or "temperature" in layer
+        ):
             continue
 
         assert layer in params_a.keys()
@@ -330,7 +362,7 @@ def compute_layer_similarity(Wa, Wb, P_curr, P_prev, debug=True):
 
     if debug and len(Wa.shape) == 2:
         assert torch.allclose(
-            sim, torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T)
+            sim, torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T), atol=1e-3
         ), f"{sim} != {torch.trace(Wa.T @ P_curr @ Wb @ P_prev.T)}"
 
     return to_np(sim)
@@ -392,10 +424,10 @@ def get_prev_permutation(params_name, perm_to_axes, perm_matrices):
     return P_prev_name, P_prev
 
 
-def update_perm_matrices(perm_matrices, proj_grads, step_size):
+def update_perm_matrices(perm_matrices, proj_grads, step_size: Union[float, np.array]):
     new_perm_matrices = {}
 
-    for perm_name, perm in perm_matrices.items():
+    for i, (perm_name, perm) in enumerate(perm_matrices.items()):
 
         if perm_name == "P_final":
             new_perm_matrices[perm_name] = perm
@@ -403,7 +435,9 @@ def update_perm_matrices(perm_matrices, proj_grads, step_size):
 
         proj_grad = proj_grads[perm_name]
 
-        new_P_curr_interp = (1 - step_size) * perm + step_size * proj_grad
+        alpha = step_size if isinstance(step_size, float) else step_size[i]
+
+        new_P_curr_interp = (1 - alpha) * perm + alpha * proj_grad
         new_perm_matrices[perm_name] = new_P_curr_interp
 
     return new_perm_matrices

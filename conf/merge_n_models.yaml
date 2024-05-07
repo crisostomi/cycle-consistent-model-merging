@@ -5,7 +5,7 @@ core:
   version: 0.0.1
   tags:
     - merge_n_models
-    - rebuttal
+    # - pairwise_baseline
 
 defaults:
   - hydra: default

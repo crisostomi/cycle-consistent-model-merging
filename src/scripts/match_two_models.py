@@ -68,7 +68,7 @@ def run(cfg: DictConfig) -> str:
 
     save_permutations(permutations, cfg.permutations_path / "permutations.json")
 
-    if perm_history:
+    if perm_history and cfg.save_perm_history:
         for past_perm_ind, past_perm in enumerate(perm_history):
             past_perm = {"a": {"b": past_perm}, "b": {"a": {k: None for k in past_perm.keys()}}}
             save_permutations(past_perm, cfg.permutations_path / f"history/{past_perm_ind}.json")

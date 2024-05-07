@@ -1,5 +1,5 @@
 defaults:
-  - merger: git_rebasin_pairwise # dummy, git_rebasin, git_rebasin_pairwise, alternating_diffusion, synchronized, frank_wolfe_to_universe, frank_wolfe_to_reference
+  - merger: frank_wolfe_to_universe # dummy, git_rebasin, git_rebasin_pairwise, alternating_diffusion, synchronized, frank_wolfe_to_universe, frank_wolfe_to_reference
 
 seed_index: 0
 
