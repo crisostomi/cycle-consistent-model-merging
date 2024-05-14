@@ -51,17 +51,21 @@ class ResNet(nn.Module):
 
         self.linear = nn.Linear(out_channels[3], num_classes)
 
-    def forward(self, x, return_logits=False):
+    def forward(self, x, return_logits=False, return_embeddings=False):
+
         out = F.relu(self.bn1(self.conv1(x)))
 
         # (B, 32, 32, 32)
         out = self.blockgroup1(out)
+
         # (B, 64, 32, 32)
         out = self.blockgroup2(out)
         # (B, 64, 16, 16)
         out = self.blockgroup3(out)
 
         out = reduce(out, "n c h w -> n c", "mean")
+        if return_embeddings:
+            return out
 
         out = self.linear(out)
 
