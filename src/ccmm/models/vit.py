@@ -20,7 +20,7 @@ class Shortcut(nn.Module):
         self.identity = nn.Parameter(torch.eye(dim), requires_grad=False)
 
     def forward(self, x):
-        return x @ self.identity
+        return x @ self.identity.T
 
 
 class ViT(nn.Module):

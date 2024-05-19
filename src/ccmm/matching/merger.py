@@ -122,7 +122,10 @@ class FrankWolfeSynchronizedMerger(Merger):
         keep_soft_perms=False,
         max_iter=100,
     ):
+        assert permutation_spec is not None
+
         super().__init__(name, permutation_spec)
+
         self.max_iter = max_iter
         self.average_in_universe = average_in_universe
         self.initialization_method = initialization_method

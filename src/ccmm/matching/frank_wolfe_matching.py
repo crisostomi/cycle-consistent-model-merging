@@ -221,7 +221,7 @@ def compute_step_size(
     params_b,
     perm_spec,
     global_step_size=True,
-    line_search_strategy="armijo_goldstein",
+    line_search_strategy="fminbound",
 ) -> Union[float, np.array]:
 
     line_search_step_func = partial(

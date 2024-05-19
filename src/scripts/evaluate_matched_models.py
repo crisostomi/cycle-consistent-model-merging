@@ -11,6 +11,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning import LightningModule
 from torch.utils.data import DataLoader
+from torchvision.datasets.mnist import EMNIST
 from tqdm import tqdm
 
 from nn_core.callbacks import NNTemplateCore

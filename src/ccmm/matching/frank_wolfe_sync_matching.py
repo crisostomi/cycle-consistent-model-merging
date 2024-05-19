@@ -148,6 +148,8 @@ def collect_gradients_frank_wolfe_model_pair(
         if Wa.dim() == 1:
             Wa = Wa.unsqueeze(1)
             Wb = Wb.unsqueeze(1)
+        if Wa.dim() == 0:
+            continue
 
         # any permutation acting on the first axis is permuting rows
         row_perm_id = axes_and_perms[0]
@@ -276,6 +278,8 @@ def get_global_obj_layerwise_sync(
         if Wa.dim() == 1:
             Wa = Wa.unsqueeze(1)
             Wb = Wb.unsqueeze(1)
+        if Wa.dim() == 0:
+            continue
 
         # any permutation acting on the first axis is permuting rows
         row_perm_id = axes_and_perms[0]

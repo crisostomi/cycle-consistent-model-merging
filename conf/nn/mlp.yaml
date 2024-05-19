@@ -25,8 +25,8 @@ module:
 
   model:
     _target_: ccmm.models.mlp.MLP # ccmm.models.cnn.CNN
-    hidden_dim: 48
-    input_shape: ${dataset.input_shape}
+    hidden_dim: 512
+    input: ${dataset.input_shape}
 
 
   optimizer:

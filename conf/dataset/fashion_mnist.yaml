@@ -1,0 +1,34 @@
+
+data_path: ${oc.env:PROJECT_ROOT}/data
+name: FASHION_MNIST
+num_classes: 10
+in_channels: 1
+input_shape:
+  - 1
+  - 1
+  - 28
+  - 28
+
+train:
+  _target_: torchvision.datasets.FashionMNIST
+  root: ${dataset.data_path}
+  train: True
+  download: True
+  transform: ${dataset.train_transform}
+
+test:
+  _target_: torchvision.datasets.FashionMNIST
+  root: ${dataset.data_path}
+  train: False
+  download: True
+  transform: ${dataset.test_transform}
+
+train_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: torchvision.transforms.Normalize
+      mean: [0.1307]
+      std: [0.3081]
+
+test_transform: ${dataset.train_transform}

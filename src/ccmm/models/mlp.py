@@ -3,9 +3,13 @@ import torch.nn as nn
 
 
 class MLP(nn.Module):
-    def __init__(self, input_shape=28 * 28, num_classes=10, hidden_dim=512):
+    def __init__(self, input=28 * 28, num_classes=10, hidden_dim=512):
         super().__init__()
-        self.input_shape = torch.prod(torch.tensor(list(input_shape)))
+        if isinstance(input, int):
+            self.input_shape = input
+        else:
+            self.input_shape = torch.prod(torch.tensor(list(input)))
+
         self.layer0 = nn.Linear(self.input_shape, hidden_dim)
         self.layer1 = nn.Linear(hidden_dim, hidden_dim)
         self.layer2 = nn.Linear(hidden_dim, hidden_dim)
