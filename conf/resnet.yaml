@@ -6,8 +6,8 @@ core:
   tags:
     - train
     - resnet
-    - 2x
-    - tiny_imagenet
+    - 16x
+    - cifar100
 
 defaults:
   - hydra: default

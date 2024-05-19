@@ -27,21 +27,21 @@ module:
     _target_: ccmm.models.resnet.ResNet
     depth: 22 # 22 or 50
     num_classes: ${dataset.num_classes}
-    widen_factor: 2 # 2, 4, 16, 32 by git re-basin
+    widen_factor: 16 # 2, 4, 16, 32 by git re-basin
     norm_layer: ln
 
   optimizer:
-    _target_: torch.optim.Adam
-    # _target_: torch.optim.SGD
-    # lr: 0.1
+    # _target_: torch.optim.Adam
+    _target_: torch.optim.SGD
+    lr: 0.1
     # momentum: 0.9
-    # weight_decay: 1e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
+    weight_decay: 1e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
 
 
-  # lr_scheduler:
-  #   _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
-  #   warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
-  #   max_epochs: ${train.trainer.max_epochs}
-  #   warmup_start_lr: 1e-6
-  #   eta_min: 0.0
-  #   last_epoch: -1
+  lr_scheduler:
+    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+    warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
+    max_epochs: ${train.trainer.max_epochs}
+    warmup_start_lr: 1e-6
+    eta_min: 0.0
+    last_epoch: -1

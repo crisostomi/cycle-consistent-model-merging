@@ -26,6 +26,7 @@ module:
     vgg_name: VGG16
     in_channels: ${dataset.in_channels}
 
+
   optimizer:
     _target_: torch.optim.SGD
     lr: 0.1

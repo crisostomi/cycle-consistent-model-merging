@@ -111,7 +111,7 @@ class ResNet20PermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self, norm_layer="ln") -> None:
         self.norm_layer = norm_layer
 
-    def create_permutation(self) -> PermutationSpec:
+    def create_permutation_spec(self) -> PermutationSpec:
         norm_axes_fn = layernorm_axes if self.norm_layer == "ln" else batchnorm_axes
         easyblock_fn = partial(easyblock_axes, norm_layer=self.norm_layer)
         shortcut_block_fn = partial(shortcut_block_axes, norm_layer=self.norm_layer)

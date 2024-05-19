@@ -28,7 +28,7 @@ def run(cfg: DictConfig) -> str:
     cfg.results_path = Path(cfg.results_path / f"{len(model_seeds)}")
 
     permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
-    permutation_spec = permutation_spec_builder.create_permutation()
+    permutation_spec = permutation_spec_builder.create_permutation_spec()
 
     pylogger.info("Using artificial models obtained via permutations of the first model")
     seed_model = load_model_from_info(cfg.model_info_path, model_seeds[0])

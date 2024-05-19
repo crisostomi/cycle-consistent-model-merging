@@ -50,7 +50,7 @@ def run(cfg: DictConfig) -> str:
     all_combinations = get_all_symbols_combinations(symbols)
 
     permutation_spec_builder = instantiate(cfg.permutation_spec_builder)
-    permutation_spec = permutation_spec_builder.create_permutation()
+    permutation_spec = permutation_spec_builder.create_permutation_spec()
 
     models: Dict[str, LightningModule] = {
         map_model_seed_to_symbol(seed): load_model_from_info(cfg.model_info_path, seed) for seed in model_seeds

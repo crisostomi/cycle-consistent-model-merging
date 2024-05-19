@@ -25,6 +25,9 @@ module:
 
   model:
     _target_: ccmm.models.mlp.MLP # ccmm.models.cnn.CNN
+    hidden_dim: 48
+    input_shape: ${dataset.input_shape}
+
 
   optimizer:
     _target_: torch.optim.Adam

@@ -5,12 +5,11 @@ core:
   version: 0.0.1
   tags:
     - merge_n_models
-    # - pairwise_baseline
 
 defaults:
   - hydra: default
   - matching: merge_n_models # match_then_sync
-  - dataset: cifar10 # cifar10, mnist
+  - dataset: cifar100 # cifar10, mnist
   - model: resnet20 # mlp, resnet20, vgg
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running

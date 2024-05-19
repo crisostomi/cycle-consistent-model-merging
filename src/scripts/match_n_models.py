@@ -40,7 +40,7 @@ def run(cfg: DictConfig) -> str:
     }
 
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
-    permutation_spec = permutation_spec_builder.create_permutation()
+    permutation_spec = permutation_spec_builder.create_permutation_spec()
 
     ref_model = list(models.values())[0]
     assert set(permutation_spec.layer_and_axes_to_perm.keys()) == set(ref_model.model.state_dict().keys())

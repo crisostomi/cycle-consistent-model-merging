@@ -34,6 +34,8 @@ def frank_wolfe_weight_matching(
     num_trials=3,
     device="cuda",
     keep_soft_perms: bool = False,
+    return_all_trial_perm_matrices: bool = False,
+    return_step_sizes: bool = False,
 ):
     """
     Find a permutation of params_b to make them match params_a.
@@ -61,6 +63,8 @@ def frank_wolfe_weight_matching(
 
     seeds = np.random.randint(0, 1000, num_trials)
     best_obj = 0.0
+    best_perm_matrices_history = None
+    all_trial_perm_matrices = []
 
     for seed in tqdm(seeds, desc="Running multiple trials"):
         seed_everything(seed)
@@ -69,6 +73,8 @@ def frank_wolfe_weight_matching(
             params_a, params_b, perm_sizes, initialization_method, ps, max_iter, device=device
         )
         pylogger.info(f"Trial objective: {trial_obj}")
+
+        all_trial_perm_matrices.append(perm_matrices)
 
         if trial_obj > best_obj:
             pylogger.info(f"New best objective! Previous was {best_obj}")
@@ -80,10 +86,10 @@ def frank_wolfe_weight_matching(
         p: perm if keep_soft_perms else solve_linear_assignment_problem(perm) for p, perm in best_perm_matrices.items()
     }
 
-    if return_perm_history:
-        return all_perm_indices, best_perm_matrices_history
-    else:
-        return all_perm_indices
+    if return_all_trial_perm_matrices:
+        return all_perm_indices, best_perm_matrices_history, all_trial_perm_matrices
+
+    return all_perm_indices, best_perm_matrices_history
 
 
 def collect_perm_sizes(perm_spec, ref_params):
@@ -98,7 +104,15 @@ def collect_perm_sizes(perm_spec, ref_params):
 
 
 def frank_wolfe_weight_matching_trial(
-    params_a, params_b, perm_sizes, initialization_method, perm_spec, max_iter=100, device="cuda", global_step_size=True
+    params_a,
+    params_b,
+    perm_sizes,
+    initialization_method,
+    perm_spec,
+    max_iter=100,
+    device="cuda",
+    global_step_size=True,
+    return_step_sizes=False,
 ):
 
     perm_matrices: Dict[str, PermutationMatrix] = initialize_perm_matrices(
@@ -108,6 +122,7 @@ def frank_wolfe_weight_matching_trial(
 
     old_obj = 0.0
     patience_steps = 0
+    all_step_sizes = []
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):
         pylogger.info(f"Iteration {iteration}")
@@ -135,7 +150,12 @@ def frank_wolfe_weight_matching_trial(
         if patience_steps >= 5:
             break
 
+        all_step_sizes.append(step_size)
+
         perm_matrices_history.append(perm_matrices)
+
+    if return_step_sizes:
+        return perm_matrices, perm_matrices_history, new_obj, all_step_sizes
 
     return perm_matrices, perm_matrices_history, new_obj
 
@@ -168,8 +188,40 @@ def project_gradients(gradients, device):
     return proj_grads
 
 
+def backtracking_line_search(line_search_step_func, x, d, alpha=0.3, beta=0.8, max_iter=100):
+    gamma = 1.0
+    current_value = line_search_step_func(step_size=0.0)
+
+    for _ in range(max_iter):
+        new_value = line_search_step_func(gamma)
+        if new_value <= current_value + alpha * gamma * np.dot(d, d):
+            break
+        gamma *= beta
+    return gamma
+
+
+def armijo_goldstein_line_search(line_search_step_func, x, d, alpha=0.3, beta=0.8, max_iter=100):
+    gamma = 1.0
+    current_value = line_search_step_func(0.0)
+    grad_f0 = (line_search_step_func(beta) - current_value) / beta  # Approximate gradient at 0
+
+    for _ in range(max_iter):
+        new_value = line_search_step_func(gamma)
+        if new_value <= current_value + alpha * gamma * grad_f0:
+            break
+        gamma *= beta
+
+    return gamma
+
+
 def compute_step_size(
-    proj_grads, perm_matrices, params_a, params_b, perm_spec, global_step_size=True
+    proj_grads,
+    perm_matrices,
+    params_a,
+    params_b,
+    perm_spec,
+    global_step_size=True,
+    line_search_strategy="armijo_goldstein",
 ) -> Union[float, np.array]:
 
     line_search_step_func = partial(
@@ -182,7 +234,20 @@ def compute_step_size(
     )
 
     if global_step_size:
-        step_size = fminbound(line_search_step_func, 0, 1)
+
+        if line_search_strategy == "fminbound":
+            step_size = fminbound(line_search_step_func, 0, 1)
+
+        else:
+            x = np.zeros(len(perm_matrices), dtype=np.float64)
+            d = np.ones(len(perm_matrices), dtype=np.float64)  # Direction is the vector of ones
+
+            search_fn = (
+                backtracking_line_search if line_search_strategy == "backtracking" else armijo_goldstein_line_search
+            )
+
+            step_size = search_fn(line_search_step_func, x, d)
+
         pylogger.info(f"Step size: {step_size}")
 
     else:

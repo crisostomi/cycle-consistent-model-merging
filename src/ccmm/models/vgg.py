@@ -27,6 +27,9 @@ class VGG(nn.Module):
         )
 
     def forward(self, x):
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
+
         out = self.embedder(x)
 
         out = out.view(out.size(0), -1)

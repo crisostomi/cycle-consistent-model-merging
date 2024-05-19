@@ -59,7 +59,7 @@ def run(cfg: DictConfig) -> str:
     updated_params = {symb: {other_symb: None for other_symb in symbols.difference(symb)} for symb in symbols}
 
     permutation_spec_builder = instantiate(core_cfg.model.permutation_spec_builder)
-    permutation_spec = permutation_spec_builder.create_permutation()
+    permutation_spec = permutation_spec_builder.create_permutation_spec()
 
     permutations = load_permutations(
         cfg.permutations_path / "permutations.json", factored=cfg.use_factored_permutations
@@ -149,8 +149,7 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
     }
     trainer = instantiate(cfg.trainer)
 
-    # TODO: fix back
-    for lam in tqdm(lambdas[1:]):
+    for lam in tqdm(lambdas):
 
         interpolated_params = linear_interpolate(lam, fixed_dict, permutee_dict)
         permutee.model.load_state_dict(interpolated_params)

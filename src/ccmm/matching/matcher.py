@@ -149,10 +149,7 @@ class FrankWolfeMatcher(Matcher):
             keep_soft_perms=self.keep_soft_perms,
         )
 
-        if self.return_perm_history:
-            return permutation_indices, perm_history
-        else:
-            return permutation_indices
+        return permutation_indices, perm_history
 
 
 class FrankWolfeSynchronizedMatcher(Matcher):
