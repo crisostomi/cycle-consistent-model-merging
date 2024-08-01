@@ -7,8 +7,8 @@ from typing import NamedTuple
 pylogger = logging.getLogger(__name__)
 
 
-def conv_axes(name, p_rows, p_cols):
-    return {
+def conv_axes(name, p_rows, p_cols, bias=False):
+    axes = {
         f"{name}.weight": (
             p_rows,
             p_cols,
@@ -16,6 +16,10 @@ def conv_axes(name, p_rows, p_cols):
             None,
         )
     }
+    if bias:
+        axes[f"{name}.bias"] = (p_rows,)
+
+    return axes
 
 
 def layernorm_axes(name, p):
@@ -323,3 +327,19 @@ def transformer_block_axes(depth, p_in, p_out):
         all_axes.update(block_axes)
 
     return all_axes
+
+
+class CNNPermutationSpecBuilder(PermutationSpecBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def create_permutation_spec(self) -> PermutationSpec:
+        axes_to_perm = {
+            **conv_axes("conv1", p_rows="P_conv1", p_cols=None, bias=True),
+            **conv_axes("conv2", p_rows="P_conv2", p_cols="P_conv1", bias=True),
+            "shortcut.identity": (None, "P_conv2"),
+            **dense_layer_axes("fc1", p_rows="P_fc1", p_cols=None),
+            **dense_layer_axes("fc2", p_rows=None, p_cols="P_fc1"),
+        }
+
+        return self.permutation_spec_from_axes_to_perm(axes_to_perm)

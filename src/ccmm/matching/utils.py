@@ -224,7 +224,13 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
 
         param_name_in_perm_dict = param_name
 
-        if "num_batches_tracked" in param_name:
+        if (
+            "num_batches_tracked" in param_name
+            # or "cls_token" in param_name
+            # or "pos_embed" in param_name
+            or "to_patch_tokens.1" in param_name
+            or "temperature" in param_name
+        ):
             permuted_params[param_name] = param
             continue
 
@@ -237,11 +243,14 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
             param_name_in_perm_dict in ps.layer_and_axes_to_perm
         ), f"param_name {param_name} not found in ps.layer_and_axes_to_perm"
 
-        param = copy.deepcopy(param)
-        perms_to_apply = ps.layer_and_axes_to_perm[param_name_in_perm_dict]
+        try:
+            param = copy.deepcopy(param)
+            perms_to_apply = ps.layer_and_axes_to_perm[param_name_in_perm_dict]
 
-        param = get_permuted_param(param, perms_to_apply, perm_matrices)
-        permuted_params[param_name] = param
+            param = get_permuted_param(param, perms_to_apply, perm_matrices)
+            permuted_params[param_name] = param
+        except:
+            print("???")
 
     return permuted_params
 

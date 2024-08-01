@@ -17,7 +17,8 @@ def pair(t):
 class Shortcut(nn.Module):
     def __init__(self, dim):
         super().__init__()
-        self.identity = nn.Parameter(torch.eye(dim), requires_grad=False)
+        # TODO: should have requires_grad=False
+        self.identity = nn.Parameter(torch.eye(dim), requires_grad=True)
 
     def forward(self, x):
         return x @ self.identity.T

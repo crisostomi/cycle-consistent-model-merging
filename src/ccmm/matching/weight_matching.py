@@ -95,11 +95,28 @@ def weight_matching(
 
     params_a, params_b = fixed, permutee
 
-    # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
-    perm_sizes = {
-        p: params_a[params_and_axes[0][0]].shape[params_and_axes[0][1]]
-        for p, params_and_axes in ps.perm_to_layers_and_axes.items()
-    }
+    print(ps.perm_to_layers_and_axes)
+    print(params_a.keys())
+
+    perm_sizes = {}
+
+    for p, params_and_axes in ps.perm_to_layers_and_axes.items():
+
+        # p is the permutation matrix name, e.g. P_0, P_1, ..
+        # params_and_axes is a list of tuples, each tuple contains the name of the parameter and the axis on which the permutation matrix acts
+
+        # it is enough to select a single parameter and axis, since all the parameters permuted by the same matrix have the same shape
+        ref_tuple = params_and_axes[0]
+        ref_param_name = ref_tuple[0]
+        ref_axis = ref_tuple[1]
+
+        perm_sizes[p] = params_a[ref_param_name].shape[ref_axis]
+
+    # # For a MLP of 4 layers it would be something like {'P_0': 512, 'P_1': 512, 'P_2': 512, 'P_3': 256}. Input and output dim are never permuted.
+    # perm_sizes = {
+    #     p: params_a[params_and_axes[0][0]].shape[params_and_axes[0][1]]
+    #     for p, params_and_axes in ps.perm_to_layers_and_axes.items()
+    # }
 
     # initialize with identity permutation if none given
     all_perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
@@ -125,6 +142,7 @@ def weight_matching(
             params_and_axes: List[Tuple[str, int]] = ps.perm_to_layers_and_axes[p]
 
             for params_name, axis in params_and_axes:
+
                 w_a = params_a[params_name]
                 w_b = params_b[params_name]
 
@@ -133,6 +151,8 @@ def weight_matching(
                 perms_to_apply = ps.layer_and_axes_to_perm[params_name]
 
                 w_b = get_permuted_param(w_b, perms_to_apply, all_perm_indices, except_axis=axis)
+
+                assert w_a.shape == w_b.shape
 
                 w_a = torch.moveaxis(w_a, axis, 0).reshape((num_neurons, -1))
                 w_b = torch.moveaxis(w_b, axis, 0).reshape((num_neurons, -1))

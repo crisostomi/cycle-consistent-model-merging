@@ -29,7 +29,7 @@ def frank_wolfe_weight_matching(
     fixed: ModelParams,
     permutee: ModelParams,
     initialization_method: str,
-    max_iter=100,
+    max_iter=200,
     return_perm_history=False,
     num_trials=3,
     device="cuda",
@@ -172,6 +172,8 @@ def initialize_perm_matrices(
     elif initialization_method == "LAP":
         perm_indices = weight_matching(perm_spec, fixed, permutee)
         return {p: perm_indices_to_perm_matrix(perm_indices[p]).to(device) for p in perm_indices.keys()}
+    elif initialization_method == "bistochastic_barycenter":
+        return {p: torch.ones((n, n)).to(device) / n for p, n in perm_sizes.items()}
     else:
         raise ValueError(f"Unknown initialization method {initialization_method}")
 
@@ -531,8 +533,8 @@ def sinkhorn_knopp(matrix, tol=1e-8, max_iterations=10000, device="cuda"):
     matrix += 1e-6
 
     for iter in range(max_iterations):
-        matrix /= matrix.sum(dim=1, keepdims=True)
 
+        matrix /= matrix.sum(dim=1, keepdims=True)
         matrix /= matrix.sum(dim=0, keepdims=True)
 
         # Check if matrix is close enough to doubly stochastic

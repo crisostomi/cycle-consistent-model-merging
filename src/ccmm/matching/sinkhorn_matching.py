@@ -18,29 +18,39 @@ def get_perm_dict(
     input,
     remove_nodes: List[str] = list(),
 ):
-    perm_dict, n_perm, permutation_g, parameter_map = solve_graph(model, input, remove_nodes=remove_nodes)
+    perm_dict, num_perms, perm_graph, param_to_node_id_map = solve_graph(model, input, remove_nodes=remove_nodes)
 
-    P_sizes = [None] * n_perm
-    map_param_index = dict()
-    map_prev_param_index = dict()
-    nodes = list(permutation_g.nodes.keys())
+    P_sizes = [None] * num_perms
+
+    param_to_perm_map = dict()
+    param_to_prev_perm_map = dict()
+
+    nodes = list(perm_graph.nodes.keys())
+
     for name, p in model.named_parameters():
-        if parameter_map[name] not in nodes:
+        if "temperature" in name:
+            continue
+
+        param_node_id = param_to_node_id_map[name]
+
+        if param_node_id not in nodes:
             continue
         else:
-            map_param_index[name] = permutation_g.naming[parameter_map[name]]
-        parents = permutation_g.parents(parameter_map[name])
-        map_prev_param_index[name] = None if len(parents) == 0 else permutation_g.naming[parents[0]]
+            param_to_perm_map[name] = perm_graph.naming[param_node_id]
+
+        parents = perm_graph.parents(param_node_id)
+        param_to_prev_perm_map[name] = None if len(parents) == 0 else perm_graph.naming[parents[0]]
 
         if "weight" in name[-6:]:
+
             if len(p.shape) == 1:  # batchnorm
                 pass  # no permutation : bn is "part" for the previous one like biais
             else:
-                if map_param_index[name] is not None and perm_dict[map_param_index[name]] is not None:
-                    perm_index = perm_dict[map_param_index[name]]
+                if param_to_perm_map[name] is not None and perm_dict[param_to_perm_map[name]] is not None:
+                    perm_index = perm_dict[param_to_perm_map[name]]
                     P_sizes[perm_index] = (p.shape[0], p.shape[0])
 
-    return perm_dict, map_param_index, map_prev_param_index
+    return perm_dict, param_to_perm_map, param_to_prev_perm_map
 
 
 def sinkhorn_matching(

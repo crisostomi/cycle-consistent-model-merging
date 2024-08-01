@@ -6,14 +6,14 @@ core:
   tags:
     - train
     - resnet
-    - 16x
-    - cifar100
+    - 2x
+    - emnist
 
 defaults:
   - hydra: default
   - nn: resnet
   - train: resnet
-  - dataset: cifar100
+  - dataset: emnist
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblib

@@ -1,0 +1,17 @@
+core:
+  project_name: cycle-consistent-model-merging
+  storage_dir: ${oc.env:PROJECT_ROOT}/storage
+  version: 0.0.1
+  tags:
+    - train
+    - cnn
+    - emnist
+
+defaults:
+  - hydra: default
+  - nn: cnn
+  - train: cnn
+  - dataset: emnist
+  - _self_ # as last argument to allow the override of parameters via this main config
+#    Decomment this parameter to get parallel job running
+#  - hydra/launcher: joblib

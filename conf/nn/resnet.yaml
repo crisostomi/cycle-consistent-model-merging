@@ -29,6 +29,7 @@ module:
     num_classes: ${dataset.num_classes}
     widen_factor: 16 # 2, 4, 16, 32 by git re-basin
     norm_layer: ln
+    input_channels: 3
 
   optimizer:
     # _target_: torch.optim.Adam

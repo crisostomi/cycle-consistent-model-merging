@@ -10,7 +10,7 @@ pylogger = logging.getLogger(__name__)
 
 
 class ResNet(nn.Module):
-    def __init__(self, depth, widen_factor, num_classes, norm_layer="ln"):
+    def __init__(self, depth, widen_factor, num_classes, norm_layer="ln", input_channels=3):
         super(ResNet, self).__init__()
 
         self.depth = depth
@@ -21,8 +21,6 @@ class ResNet(nn.Module):
 
         self.in_planes = 32
         # standard (R, G, B)
-        input_channels = 3
-
         assert (depth - 4) % 6 == 0, "Wide-resnet depth should be 6n+4"
         num_blocks_per_layer = (depth - 4) // 6
 

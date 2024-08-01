@@ -1,0 +1,6 @@
+name: CNN
+model_identifier: ${model.name}
+num_classes: ${dataset.num_classes}
+
+permutation_spec_builder:
+  _target_: ccmm.matching.permutation_spec.CNNPermutationSpecBuilder

@@ -10,14 +10,6 @@ class Palette(dict):
         with open(path, "r") as f:
             color_palette = json.load(f)
 
-        # mapping = {
-        #     "Burnt sienna": "red",
-        #     "Cambridge blue": "green",
-        #     "Delft Blue": "blue",
-        #     "Eggshell": "white",
-        #     "Sunset": "yellow",
-        # }
-
         mapping = {
             "Bittersweet shimmer": "light red",
             "Persian green": "green",

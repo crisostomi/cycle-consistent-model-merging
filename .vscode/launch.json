@@ -5,17 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "train cifar10",
+            "name": "train emnist",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/scripts/train.py",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "args": [
-                "nn/dataset=cifar10",
-                "nn.dataset_name=CIFAR10",
-                "nn.module.model.input=3072"
-            ]
         },
         {
             "name": "Python: Current File",

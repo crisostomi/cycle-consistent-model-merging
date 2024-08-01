@@ -5,19 +5,22 @@ import warnings
 from collections import defaultdict
 
 import graphviz
+import numpy as np
 from numpy import arange, argmax, unique
 from torchviz import make_dot
 
-from ccmm.matching.permutation_spec import PermutationSpec
+from ccmm.matching.permutation_spec import PermutationSpec, PermutationSpecBuilder
 
 
-class graph:
+class TorchVizPermutationGraph:
     def __init__(self):
         self.nodes = dict()
         self.edges = defaultdict(list)
+
+        # maps a long node id to a progressive integer, e.g. {'138150777418896': 0, '138150777420384': 1, ..}
         self.naming = dict()
 
-    def view(self):
+    def view(self, directory="doctest-output", filename="perm_graph"):
         node_attr = dict(
             style="filled",
             shape="box",
@@ -45,7 +48,7 @@ class graph:
             for c in childs:
                 dot.edge(key, c)
 
-        dot.render(directory="doctest-output", view=True, engine="dot")
+        dot.render(directory=directory, filename=filename, view=True, engine="dot")
 
     def add_node(self, name, value, is_output=False, is_param=False):
         self.nodes[name] = dict(type=value, is_output=is_output, is_param=is_param)
@@ -95,6 +98,7 @@ class graph:
             "ConvolutionBackward0",
             "AddmmBackward0",
             "MmBackward0",
+            "AddBackward0",  # this line is transformer-stuff
         ]:
             return key
         if self.nodes[key]["type"] in [
@@ -105,15 +109,18 @@ class graph:
             return key
 
         child = self.edges[key]
-        assert len(child) == 1
+        assert len(child) == 1, f"self.nodes[key]['type'] = {self.nodes[key]['type']}"
+
         return self.closer_perm(child[0])
 
     def not_output_nodes(self):
         return [key for key, value in self.nodes.items() if not value["is_output"]]
 
     def child_perm(self, key, perms):
+
         queue = [key]
         visited = [key]
+
         childs = []
         fused_nodes = []
 
@@ -135,7 +142,9 @@ class graph:
         return childs, fused_nodes
 
     def from_dot(self, dot):
+
         for n in dot.body:
+
             n = n.strip()
             is_edge = "->" in n
 
@@ -163,30 +172,41 @@ class graph:
                 self.add_edge(from_node, to_node)
 
 
-def permutation_graph(model, input, fix_multiple=False, mark_as_leaf=list(), remove_nodes=list()):
-    prev_dev = next(model.parameters()).device
+def build_permutation_graph(
+    model, input, fix_multiple=False, mark_as_leaf=list(), remove_nodes=list()
+) -> tuple[TorchVizPermutationGraph, dict]:
+
+    device = next(model.parameters()).device
+
     model.to("cpu")
     input = input.to("cpu")
-    y = model(input)
-    dot = make_dot(y, params=dict(model.named_parameters()))
-    # dot.view()
-    g = graph()
+
+    model_output = model(input)
+
+    # Graphviz representation of PyTorch autograd graph
+    dot = make_dot(model_output, params=dict(model.named_parameters()))
+
+    g = TorchVizPermutationGraph()
     g.from_dot(dot)
 
-    # map param name to permutation
-    permutation_param = dict()
+    # map param name to id of the corresponding permutation in the graph
+    param_to_node_id_map = dict()
     for name, param in model.named_parameters():
         key = g.paramid(name)
-        permutation_param[name] = g.closer_perm(key)
+        param_to_node_id_map[name] = g.closer_perm(key)
 
-    permutation_list = list(permutation_param.values())
+    permutation_list = list(param_to_node_id_map.values())
     visited = set()
 
     # construct permutation params graph
-    permutation_graph = graph()
+    permutation_graph = TorchVizPermutationGraph()
+
     for p in permutation_list:
+
         if p in visited:
             continue
+
+        # TODO: check that we are not missing some other backwards that we might want to skip
         if g.nodes[p]["type"] in ["NativeBatchNormBackward0", "NativeGroupNormBackward0", "NativeLayerNormBackward0"]:
             continue
 
@@ -194,9 +214,9 @@ def permutation_graph(model, input, fix_multiple=False, mark_as_leaf=list(), rem
         childs, fused_nodes = g.child_perm(p, permutation_list)
 
         if fused_nodes:
-            for k, v in permutation_param.items():
+            for k, v in param_to_node_id_map.items():
                 if v in fused_nodes:
-                    permutation_param[k] = p
+                    param_to_node_id_map[k] = p
 
         for c in childs:
             permutation_graph.add_edge(p, c)
@@ -205,6 +225,7 @@ def permutation_graph(model, input, fix_multiple=False, mark_as_leaf=list(), rem
 
     copy_naming = permutation_graph.naming.copy()
     permutation_graph.org_naming = copy_naming
+
     # find leaf permutations nodes
     for k, v in permutation_graph.naming.items():
         c, _ = permutation_graph.child_perm(k, permutation_list)
@@ -229,21 +250,29 @@ def permutation_graph(model, input, fix_multiple=False, mark_as_leaf=list(), rem
 
     # fix permutation nodes with multiple parents
     if fix_multiple:
+
         for n in list(permutation_graph.nodes.keys()):
+
             if n not in permutation_graph.nodes:
                 continue
+
             parents = permutation_graph.parents(n)
+
             if len(parents) > 1:
+                print(f"Multiple parents for {permutation_graph.naming[n]}")
+
                 for p in parents[1:]:
+                    print(f"Removing {permutation_graph.naming[p]} of type {permutation_graph.nodes[p]['type']}")
                     permutation_graph.remove_node(p)
 
         list_nodes = list(permutation_graph.nodes.keys())
-        for k, v in list(permutation_param.items()):
-            if v not in list_nodes:
-                permutation_param.pop(k)
 
-    model.to(prev_dev)
-    return permutation_graph, permutation_param
+        for k, v in list(param_to_node_id_map.items()):
+            if v not in list_nodes:
+                param_to_node_id_map.pop(k)
+
+    model.to(device)
+    return permutation_graph, param_to_node_id_map
 
 
 def get_connected_from(idx, permutation_g):
@@ -253,23 +282,30 @@ def get_connected_from(idx, permutation_g):
     return [permutation_g.naming[k] for k, l in permutation_g.edges.items() if permutation_g.index2name(idx) in l]
 
 
-def get_perm_dict(permutation_g):
+def perm_graph_to_perm_dict(perm_graph: TorchVizPermutationGraph):
     """
     get the permutation dict
     """
     perm_dict = {}
+
     i = -1
-    for node in permutation_g.naming.values():
-        p = get_connected_from(node, permutation_g)
+    for node in perm_graph.naming.values():
+
+        node_parents = get_connected_from(node, perm_graph)
         j = i
         i += 1
-        for p_ in p:
-            if p_ in perm_dict.keys():
-                j = perm_dict[p_]
+
+        for parent in node_parents:
+
+            if parent in perm_dict.keys():
+                j = perm_dict[parent]
                 i = max(perm_dict.values()) + 1
-            perm_dict[p_] = j
+
+            perm_dict[parent] = j
+
     # add last node (output) with no perm
     perm_dict[node] = None
+
     return perm_dict
 
 
@@ -309,49 +345,29 @@ def re_id_perm(perm_dict):
 
 
 def solve_graph(model, input, remove_nodes=list()):
-    permutation_g, parameter_map = permutation_graph(model, input, False, [], [])
-    perm_dict = get_perm_dict(permutation_g)
+
+    perm_graph, parameter_map = build_permutation_graph(
+        model, input, fix_multiple=False, mark_as_leaf=[], remove_nodes=[]
+    )
+
+    perm_dict = perm_graph_to_perm_dict(perm_graph)
+
     # remove the nodes disabled by the user
     perm_dict = remove_nodes_from_perm_dict(remove_nodes, perm_dict)
+
     # fill the gaps
     perm_dict = re_id_perm(perm_dict)
-    n_perm = len(unique([p_id for p_id in perm_dict.values() if p_id is not None]))
-    if n_perm == 0:
+    num_perms = len(unique([p_id for p_id in perm_dict.values() if p_id is not None]))
+
+    if num_perms == 0:
         warnings.warn("No permutation left in graph, you might let more nodes free")
-    return perm_dict, n_perm, permutation_g, parameter_map
+
+    return perm_dict, num_perms, perm_graph, parameter_map
 
 
-# def graph_permutations_to_perm_spec(model, perm_dict, map_param_index, map_prev_param_index):
-#     """ """
+def graph_permutations_to_perm_spec(model, perm_dict, param_to_perm_map, param_to_prev_perm_map):
 
-#     perm_dict_copy = copy.deepcopy(perm_dict)
-#     perm_dict_copy[None] = None
-
-#     def rgetattr(obj, attr, *args):  # Recursive getattr
-#         def _getattr(obj, attr):
-#             return getattr(obj, attr, *args)
-
-#         return functools.reduce(_getattr, [obj] + attr.split("."))
-
-#     layer_and_axes_to_perm = {}
-#     for layer, block in map_param_index.items():
-
-#         layer_and_axes_to_perm[layer] = tuple(
-#             [perm_dict_copy[block], perm_dict_copy[map_prev_param_index[layer]]]
-#             + [None] * (rgetattr(model, layer).dim() - 2)
-#         )[: rgetattr(model, layer).dim()]
-
-#     perm_to_layers_and_axes = {
-#         perm_id: [(layer, 0) for layer, block in map_param_index.items() if perm_dict[block] == perm_id]
-#         + [(layer, 1) for layer, block in map_prev_param_index.items() if perm_dict[block] == perm_id]
-#         for perm_id in set(perm_dict_copy.values())
-#         if perm_id is not None
-#     }
-
-#     return PermutationSpec(perm_to_layers_and_axes, layer_and_axes_to_perm)
-
-
-def graph_permutations_to_perm_spec(model, perm_dict, map_param_index, map_prev_param_index):
+    is_transformer = False
 
     perm_dict_copy = copy.deepcopy(perm_dict)
     perm_dict_copy[None] = None
@@ -362,18 +378,33 @@ def graph_permutations_to_perm_spec(model, perm_dict, map_param_index, map_prev_
 
         return functools.reduce(_getattr, [obj] + attr.split("."))
 
-    layer_and_axes_to_perm = {
-        layer: tuple(
-            [perm_dict_copy[block], perm_dict_copy[map_prev_param_index[layer]]]
-            + [None] * (rgetattr(model, layer).dim() - 2)
-        )[: rgetattr(model, layer).dim()]
-        for layer, block in map_param_index.items()
-    }
-    perm_to_layers_and_axes = {
-        perm_id: [(layer, 0) for layer, block in map_param_index.items() if perm_dict_copy[block] == perm_id]
-        + [(layer, 1) for layer, block in map_prev_param_index.items() if perm_dict_copy[block] == perm_id]
-        for perm_id in set(perm_dict_copy.values())
-        if perm_id is not None
-    }
+    layer_and_axes_to_perm = {}
 
-    return PermutationSpec(perm_to_layers_and_axes, layer_and_axes_to_perm)
+    for param_name, perm in param_to_perm_map.items():
+
+        row_perm = perm_dict_copy[param_to_perm_map[param_name]]
+        col_perm = perm_dict_copy[param_to_prev_perm_map[param_name]]
+        param_num_dims = rgetattr(model, param_name).dim()
+
+        param_name = param_name.replace("model.", "")
+
+        # # TODO: check that this is correct
+        # if "pos_embedding" in param_name or "cls_token" in param_name:
+        #     print("####################################################")
+        #     is_transformer = True
+        #     layer_and_axes_to_perm[param_name] = [None, None, 0]
+        #     continue
+
+        layer_and_axes_to_perm[param_name] = tuple([row_perm, col_perm] + [None] * (param_num_dims - 2))[
+            :param_num_dims
+        ]
+
+    # if is_transformer:
+    #     layer_and_axes_to_perm["to_patch_embedding.to_patch_tokens.1.bias"] = (None,)
+    #     layer_and_axes_to_perm["to_patch_embedding.to_patch_tokens.1.weight"] = (None,)
+    #     for layer in np.arange(6):
+    #         layer_and_axes_to_perm[f"transformer.layers.{layer}.0.temperature"] = (None,)
+
+    perm_spec = PermutationSpecBuilder().permutation_spec_from_axes_to_perm(axes_to_perm=layer_and_axes_to_perm)
+
+    return perm_spec

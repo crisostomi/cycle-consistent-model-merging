@@ -16,9 +16,9 @@ trainer:
 model_seeds:
   - 1
   - 2
-  # - 3
-  # - 4
-  # - 5
+  - 3
+  - 4
+  - 5
 
 num_interpolation_steps: 3
 
