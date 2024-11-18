@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Mapping, Optional, Union
 
 import pytorch_lightning as pl
+import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
@@ -101,7 +102,6 @@ class MyDataModule(pl.LightningDataModule):
         gpus: Optional[Union[List[int], str, int]],
     ):
         super().__init__()
-        self.dataset = dataset
         self.num_workers = num_workers
         self.batch_size = batch_size
         self.pin_memory: bool = gpus is not None and str(gpus) != "0"
@@ -109,8 +109,14 @@ class MyDataModule(pl.LightningDataModule):
         self.train_transform = instantiate(dataset.train_transform)
         self.test_transform = instantiate(dataset.test_transform)
 
-        self.train_dataset = instantiate(dataset.train, transform=self.train_transform)
+        self.train_val_dataset = instantiate(dataset.train, transform=self.train_transform)
         self.test_dataset = instantiate(dataset.test, transform=self.test_transform)
+
+        val_percentage = 0.1
+        self.dataset = self.train_val_dataset
+        self.train_dataset, self.val_dataset = torch.utils.data.random_split(
+            self.train_val_dataset, [1 - val_percentage, val_percentage]
+        )
 
     @cached_property
     def metadata(self) -> MetaData:
@@ -122,10 +128,10 @@ class MyDataModule(pl.LightningDataModule):
             metadata: everything the model should know about the data, wrapped in a MetaData object.
         """
         # Since MetaData depends on the training data, we need to ensure the setup method has been called.
-        if self.train_dataset is None:
+        if self.dataset is None:
             self.setup(stage="fit")
 
-        return MetaData(class_vocab=self.train_dataset.class_to_idx)
+        return MetaData(class_vocab=self.dataset.class_to_idx)
 
     def prepare_data(self) -> None:
         pass
@@ -141,6 +147,16 @@ class MyDataModule(pl.LightningDataModule):
             num_workers=self.num_workers.train,
             pin_memory=self.pin_memory,
             collate_fn=partial(collate_fn, split="train", metadata=self.metadata),
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.val_dataset,
+            shuffle=False,
+            batch_size=self.batch_size.train,
+            num_workers=self.num_workers.train,
+            pin_memory=self.pin_memory,
+            collate_fn=partial(collate_fn, split="val", metadata=self.metadata),
         )
 
     def test_dataloader(self) -> DataLoader:

@@ -2,8 +2,8 @@ name: ViT
 depth: 6
 num_classes: ${dataset.num_classes}
 
-model_identifier: ${model.name}${model.depth}
+model_identifier: ${model.name}${model.depth}_no_id
 
 permutation_spec_builder:
-  _target_: ccmm.matching.permutation_spec.ViTPermutationSpecBuilder
-  depth: ${model.depth}
+  _target_: ccmm.matching.permutation_spec.AutoPermutationSpecBuilder
+  # depth: ${model.depth}

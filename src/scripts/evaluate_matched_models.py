@@ -9,7 +9,7 @@ import omegaconf
 import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from pytorch_lightning import LightningModule
+from pytorch_lightning import LightningModule, Trainer
 from torch.utils.data import DataLoader
 from torchvision.datasets.mnist import EMNIST
 from tqdm import tqdm
@@ -19,13 +19,14 @@ from nn_core.common import PROJECT_ROOT
 from nn_core.common.utils import seed_index_everything
 from nn_core.model_logging import NNLogger
 
+from ccmm.matching.repair import repair_model
 from ccmm.matching.utils import (
     apply_permutation_to_statedict,
     get_all_symbols_combinations,
     load_permutations,
     restore_original_weights,
 )
-from ccmm.utils.utils import linear_interpolate, load_model_from_artifact, map_model_seed_to_symbol
+from ccmm.utils.utils import get_model, linear_interpolate, load_model_from_artifact, map_model_seed_to_symbol
 
 pylogger = logging.getLogger(__name__)
 
@@ -126,21 +127,21 @@ def evaluate_pair_of_models(models, fixed_id, permutee_id, updated_params, train
     fixed_model = models[fixed_id]
     permutee_model = models[permutee_id]
 
-    permutee_model.model.load_state_dict(updated_params[fixed_id][permutee_id])
+    get_model(permutee_model).load_state_dict(updated_params[fixed_id][permutee_id])
 
     results = evaluate_interpolated_models(
-        fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching
+        fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching, repair=True
     )
 
     return results
 
 
-def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg):
+def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lambdas, cfg, repair=False):
     fixed = fixed.cuda()
     permutee = permutee.cuda()
 
-    fixed_dict = copy.deepcopy(fixed.model.state_dict())
-    permutee_dict = copy.deepcopy(permutee.model.state_dict())
+    fixed_dict = copy.deepcopy(get_model(fixed).state_dict())
+    permutee_dict = copy.deepcopy(get_model(permutee).state_dict())
 
     results = {
         "train_acc": [],
@@ -148,28 +149,36 @@ def evaluate_interpolated_models(fixed, permutee, train_loader, test_loader, lam
         "train_loss": [],
         "test_loss": [],
     }
-    trainer = instantiate(cfg.trainer)
+    trainer = instantiate(cfg.trainer, enable_progress_bar=False, enable_model_summary=False)
 
     for lam in tqdm(lambdas):
 
-        interpolated_params = linear_interpolate(lam, fixed_dict, permutee_dict)
-        permutee.model.load_state_dict(interpolated_params)
+        interpolated_model = copy.deepcopy(permutee)
 
-        train_results = trainer.test(permutee, train_loader)
+        interpolated_params = linear_interpolate(lam, fixed_dict, permutee_dict)
+        get_model(interpolated_model).load_state_dict(interpolated_params)
+
+        if repair and lam > 1e-5 and lam < 1 - 1e-5:
+            print("Repairing model")
+            interpolated_model = repair_model(interpolated_model, {"a": fixed, "c": permutee}, train_loader)
+
+        train_results = trainer.test(interpolated_model, train_loader)
 
         results["train_acc"].append(train_results[0]["acc/test"])
         results["train_loss"].append(train_results[0]["loss/test"])
 
-        test_results = trainer.test(permutee, test_loader)
+        if test_loader:
+            test_results = trainer.test(interpolated_model, test_loader)
 
-        results["test_acc"].append(test_results[0]["acc/test"])
-        results["test_loss"].append(test_results[0]["loss/test"])
+            results["test_acc"].append(test_results[0]["acc/test"])
+            results["test_loss"].append(test_results[0]["loss/test"])
 
     train_loss_barrier = compute_loss_barrier(results["train_loss"])
-    test_loss_barrier = compute_loss_barrier(results["test_loss"])
-
     results["train_loss_barrier"] = train_loss_barrier
-    results["test_loss_barrier"] = test_loss_barrier
+
+    if test_loader:
+        test_loss_barrier = compute_loss_barrier(results["test_loss"])
+        results["test_loss_barrier"] = test_loss_barrier
 
     return results
 

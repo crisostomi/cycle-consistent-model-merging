@@ -95,9 +95,6 @@ def weight_matching(
 
     params_a, params_b = fixed, permutee
 
-    print(ps.perm_to_layers_and_axes)
-    print(params_a.keys())
-
     perm_sizes = {}
 
     for p, params_and_axes in ps.perm_to_layers_and_axes.items():
@@ -122,6 +119,7 @@ def weight_matching(
     all_perm_indices = {p: torch.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
     # e.g. P0, P1, ..
     perm_names = list(all_perm_indices.keys())
+
     num_layers = len(perm_names)
 
     for iteration in tqdm(range(max_iter), desc="Weight matching"):

@@ -3,13 +3,12 @@ import copy
 import functools
 import warnings
 from collections import defaultdict
+from typing import List
 
 import graphviz
 import numpy as np
 from numpy import arange, argmax, unique
 from torchviz import make_dot
-
-from ccmm.matching.permutation_spec import PermutationSpec, PermutationSpecBuilder
 
 
 class TorchVizPermutationGraph:
@@ -284,7 +283,7 @@ def get_connected_from(idx, permutation_g):
 
 def perm_graph_to_perm_dict(perm_graph: TorchVizPermutationGraph):
     """
-    get the permutation dict
+    perm_dict maps groups of layers that are permuted (on the rows?) by the same permutation to the corresponding permutation id
     """
     perm_dict = {}
 
@@ -329,24 +328,29 @@ def re_id_perm(perm_dict):
     fill in the gaps in the perm_ids
     """
     list_perm_id = unique([p_id for p_id in perm_dict.values() if p_id is not None])
+
     if len(list_perm_id) == 0:
         # no permutation left
         return perm_dict
+
     first_gap = argmax((list_perm_id != arange(len(list_perm_id))).astype(int))
+
     if list_perm_id[first_gap] == 0:
         # no re_id needed
         return perm_dict
+
     for n_id, p_id in perm_dict.items():
         if p_id is not None and p_id > first_gap:
             # fill the gap
             perm_dict[n_id] = p_id - 1
-    # if there is more that one gap :
+
+    # if there is more that one gap
     return re_id_perm(perm_dict)
 
 
 def solve_graph(model, input, remove_nodes=list()):
 
-    perm_graph, parameter_map = build_permutation_graph(
+    perm_graph, param_to_node_id_map = build_permutation_graph(
         model, input, fix_multiple=False, mark_as_leaf=[], remove_nodes=[]
     )
 
@@ -362,12 +366,10 @@ def solve_graph(model, input, remove_nodes=list()):
     if num_perms == 0:
         warnings.warn("No permutation left in graph, you might let more nodes free")
 
-    return perm_dict, num_perms, perm_graph, parameter_map
+    return perm_dict, num_perms, perm_graph, param_to_node_id_map
 
 
-def graph_permutations_to_perm_spec(model, perm_dict, param_to_perm_map, param_to_prev_perm_map):
-
-    is_transformer = False
+def graph_permutations_to_layer_and_axes_to_perm(model, perm_dict, param_to_perm_map, param_to_prev_perm_map):
 
     perm_dict_copy = copy.deepcopy(perm_dict)
     perm_dict_copy[None] = None
@@ -386,25 +388,57 @@ def graph_permutations_to_perm_spec(model, perm_dict, param_to_perm_map, param_t
         col_perm = perm_dict_copy[param_to_prev_perm_map[param_name]]
         param_num_dims = rgetattr(model, param_name).dim()
 
-        param_name = param_name.replace("model.", "")
+        # TODO: FIX THIS STUFF ONCE AND FOR ALL
+        # param_name = param_name.replace("model.", "")
 
-        # # TODO: check that this is correct
-        # if "pos_embedding" in param_name or "cls_token" in param_name:
-        #     print("####################################################")
-        #     is_transformer = True
-        #     layer_and_axes_to_perm[param_name] = [None, None, 0]
-        #     continue
+        if "pos_embedding" in param_name or "cls_token" in param_name:
+            layer_and_axes_to_perm[param_name] = [None, None, row_perm]
+            continue
 
         layer_and_axes_to_perm[param_name] = tuple([row_perm, col_perm] + [None] * (param_num_dims - 2))[
             :param_num_dims
         ]
 
-    # if is_transformer:
-    #     layer_and_axes_to_perm["to_patch_embedding.to_patch_tokens.1.bias"] = (None,)
-    #     layer_and_axes_to_perm["to_patch_embedding.to_patch_tokens.1.weight"] = (None,)
-    #     for layer in np.arange(6):
-    #         layer_and_axes_to_perm[f"transformer.layers.{layer}.0.temperature"] = (None,)
+    return layer_and_axes_to_perm
 
-    perm_spec = PermutationSpecBuilder().permutation_spec_from_axes_to_perm(axes_to_perm=layer_and_axes_to_perm)
 
-    return perm_spec
+def get_perm_dict(
+    model,
+    input,
+    remove_nodes: List[str] = list(),
+):
+    perm_dict, num_perms, perm_graph, param_to_node_id_map = solve_graph(model, input, remove_nodes=remove_nodes)
+
+    P_sizes = [None] * num_perms
+
+    param_to_perm_map = dict()
+    param_to_prev_perm_map = dict()
+
+    nodes = list(perm_graph.nodes.keys())
+
+    for name, p in model.named_parameters():
+
+        if "temperature" in name:
+            continue
+
+        param_node_id = param_to_node_id_map[name]
+
+        if param_node_id not in nodes:
+            continue
+        else:
+            param_to_perm_map[name] = perm_graph.naming[param_node_id]
+
+        parents = perm_graph.parents(param_node_id)
+        param_to_prev_perm_map[name] = None if len(parents) == 0 else perm_graph.naming[parents[0]]
+
+        if "weight" in name[-6:]:
+
+            if len(p.shape) == 1:  # batchnorm
+                # no permutation : bn is "part" for the previous one like bias
+                pass
+            else:
+                if param_to_perm_map[name] is not None and perm_dict[param_to_perm_map[name]] is not None:
+                    perm_index = perm_dict[param_to_perm_map[name]]
+                    P_sizes[perm_index] = (p.shape[0], p.shape[0])
+
+    return perm_dict, param_to_perm_map, param_to_prev_perm_map

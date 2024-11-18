@@ -5,6 +5,8 @@ core:
   version: 0.0.1
   tags:
     - scaling
+    - runtime
+    - dev
 
 defaults:
   - hydra: default

@@ -12,7 +12,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor
 
 from ccmm.matching.permutation_spec import PermutationSpec
-from ccmm.utils.utils import to_np
+from ccmm.utils.utils import get_model, to_np
 
 # shape (n, n), contains the permutation matrix, e.g. [[1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0]]
 PermutationMatrix = Tensor
@@ -33,7 +33,7 @@ def restore_original_weights(models: Dict[str, LightningModule], original_weight
     """
 
     for model_id, model in models.items():
-        model.model.load_state_dict(copy.deepcopy(original_weights[model_id]))
+        get_model(model).load_state_dict(copy.deepcopy(original_weights[model_id]))
 
 
 def get_all_symbols_combinations(symbols: Set[str]) -> List[Tuple[str, str]]:
@@ -144,8 +144,8 @@ def perm_rows(x, perm):
     X ~ (n, d0) or (n, d0, d1) or (n, d0, d1, d2)
     perm ~ (n, n)
     """
-    assert x.shape[0] == perm.shape[0]
-    assert perm.dim() == 2 and perm.shape[0] == perm.shape[1]
+    assert x.shape[0] == perm.shape[0], f"x.shape[0] = {x.shape[0]}, perm.shape[0] = {perm.shape[0]}"
+    assert perm.dim() == 2 and perm.shape[0] == perm.shape[1], f"perm.dim() = {perm.dim()}, perm.shape = {perm.shape}"
 
     input_dims = "jklm"[: x.dim()]
     output_dims = "iklm"[: x.dim()]
@@ -187,6 +187,7 @@ def get_permuted_param(param, perms_to_apply, perm_matrices, except_axis=None):
             continue
 
         perm = perm_matrices[perm_id].cpu()
+        param = param.cpu()
         if perm.dim() == 1:
             # permute by indices
             param = torch.index_select(param, axis, perm.int())
@@ -235,22 +236,19 @@ def apply_permutation_to_statedict(ps: PermutationSpec, perm_matrices, all_param
             continue
 
         # NEED TO FIX THIS FOR SINKHORN
-        # if "running_mean" in param_name or "running_var" in param_name:
-        #     layer_name = ".".join(param_name.split(".")[:-1])
-        #     param_name_in_perm_dict = layer_name + ".weight"
+        if "running_mean" in param_name or "running_var" in param_name:
+            layer_name = ".".join(param_name.split(".")[:-1])
+            param_name_in_perm_dict = layer_name + ".weight"
 
         assert (
             param_name_in_perm_dict in ps.layer_and_axes_to_perm
         ), f"param_name {param_name} not found in ps.layer_and_axes_to_perm"
 
-        try:
-            param = copy.deepcopy(param)
-            perms_to_apply = ps.layer_and_axes_to_perm[param_name_in_perm_dict]
+        param = copy.deepcopy(param)
+        perms_to_apply = ps.layer_and_axes_to_perm[param_name_in_perm_dict]
 
-            param = get_permuted_param(param, perms_to_apply, perm_matrices)
-            permuted_params[param_name] = param
-        except:
-            print("???")
+        param = get_permuted_param(param, perms_to_apply, perm_matrices)
+        permuted_params[param_name] = param
 
     return permuted_params
 

@@ -7,9 +7,7 @@ for width in 1 2 4 8 16; do
     echo -e "${RED}Running experiments for width $width ${NC}  "
 
     python src/scripts/merge_n_models.py "model.widen_factor=$width"
-    for repair_flag in "True" "False"; do
-        python src/scripts/evaluate_merged_model.py "matching.repaired=$repair_flag" "model.widen_factor=$width"
-    done
+    python src/scripts/evaluate_merged_model.py "matching.repaired=False" "model.widen_factor=$width"
     echo -e "${RED}Completed experiments for width $width ${NC}"
 done
 

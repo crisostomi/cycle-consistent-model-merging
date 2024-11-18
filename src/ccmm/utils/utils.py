@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import wandb
 from omegaconf import ListConfig
 from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 from scipy.interpolate import interp1d
@@ -186,6 +187,14 @@ def l2_norm_models(state_dict1, state_dict2):
     """Calculate the L2 norm of the difference between two state dictionaries."""
     diff_squared_sum = sum(torch.sum((state_dict1[key] - state_dict2[key]) ** 2) for key in state_dict1)
     return torch.sqrt(diff_squared_sum)
+
+
+def cosine_models(state_dict1, state_dict2):
+    """Calculate the cosine similarity between two state dictionaries."""
+    dot_product = sum(torch.dot(state_dict1[key].view(-1), state_dict2[key].view(-1)) for key in state_dict1)
+    norm1 = torch.sqrt(sum(torch.sum(state_dict1[key] ** 2) for key in state_dict1))
+    norm2 = torch.sqrt(sum(torch.sum(state_dict2[key] ** 2) for key in state_dict2))
+    return dot_product / (norm1 * norm2)
 
 
 def average_models(model_params, reduction="mean"):
@@ -477,11 +486,21 @@ def cumulative_sum(arr):
 def timeit(func):
     @wraps(func)
     def timeit_wrapper(*args, **kwargs):
+
         start_time = time.perf_counter()
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
         print(f"Function {func.__name__} Took {total_time:.4f} seconds")
+
+        wandb.log({"merging_time": total_time})
         return result
 
     return timeit_wrapper
+
+
+def get_model(model):
+    while hasattr(model, "model"):
+        model = model.model
+
+    return model

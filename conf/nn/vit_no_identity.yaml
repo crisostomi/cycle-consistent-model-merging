@@ -1,0 +1,51 @@
+
+data_path: ${oc.env:PROJECT_ROOT}/data
+output_path: ${oc.env:PROJECT_ROOT}/output
+
+data:
+  _target_: ccmm.data.datamodule.MyDataModule
+
+  dataset: ${dataset}
+
+  gpus: ${train.trainer.gpus}
+
+  num_workers:
+    train: 8
+    val: 4
+    test: 4
+
+  batch_size:
+    train: 100 #256 (it's 100 in git-rebasin)
+    val: 128
+    test: 128
+
+module:
+  _target_: ccmm.pl_modules.pl_module.MyLightningModule
+  model_name: ViT${nn.module.model.depth}_no_id
+
+  model:
+    _target_: ccmm.models.vit_no_identity.ViT
+    depth: 6 #12
+    num_classes: ${dataset.num_classes}
+    image_size: ${dataset.image_size}
+    patch_size: 4
+    dropout: 0.3
+    dim: 512
+    heads: 1
+    mlp_dim: 1024
+
+  optimizer:
+    _target_: torch.optim.Adam
+    # _target_: torch.optim.SGD
+    # lr: 0.1
+    # momentum: 0.9
+    # weight_decay: 1e-4 # checked in git-rebasin-s code (previously was 0.0005 for some reason)
+
+
+  # lr_scheduler:
+  #   _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+  #   warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
+  #   max_epochs: ${train.trainer.max_epochs}
+  #   warmup_start_lr: 1e-6
+  #   eta_min: 0.0
+  #   last_epoch: -1

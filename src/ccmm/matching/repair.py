@@ -123,9 +123,15 @@ def compute_goal_statistics(model_to_repair, endpoint_models):
         if not isinstance(m_interp, ResetConv):
             continue
 
-        mu_endpoints = torch.stack([m.bn.running_mean for m in endpoint_modules])
+        try:
+            assert isinstance(m_interp, ResetConv) and all([isinstance(m, ResetConv) for m in endpoint_modules])
 
-        goal_mean = mu_endpoints.mean(dim=0)
+            mu_endpoints = torch.stack([m.bn.running_mean for m in endpoint_modules])
+
+            goal_mean = mu_endpoints.mean(dim=0)
+
+        except:
+            print("WTFF")
 
         var_endpoints = torch.stack([m.bn.running_var for m in endpoint_modules])
 

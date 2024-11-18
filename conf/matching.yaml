@@ -4,15 +4,13 @@ core:
   storage_dir: ${oc.env:PROJECT_ROOT}/storage
   version: 0.0.1
   tags:
-    - match_two_models
-    - mnist
-    - mlp
+    - resnet50
 
 defaults:
   - hydra: default
   - matching: match_two_models # match_then_sync
   - dataset: cifar10 # cifar10, mnist
-  - model: vit # resnet20, mlp, vgg, vit
+  - model: resnet50 # resnet20, mlp, vgg, vit
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
 #  - hydra/launcher: joblibs

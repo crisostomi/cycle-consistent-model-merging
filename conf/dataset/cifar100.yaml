@@ -7,6 +7,7 @@ input_shape:
   - 3
   - 32
   - 32
+image_size: 32
 
 train:
   _target_: torchvision.datasets.CIFAR100

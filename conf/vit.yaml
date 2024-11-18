@@ -5,12 +5,12 @@ core:
   version: 0.0.1
   tags:
     - train
-    - vit
+    - vit_no_id
     - cifar10
 
 defaults:
   - hydra: default
-  - nn: vit
+  - nn: vit_no_identity
   - train: resnet
   - dataset: cifar10
   - _self_ # as last argument to allow the override of parameters via this main config

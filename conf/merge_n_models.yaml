@@ -5,7 +5,8 @@ core:
   version: 0.0.1
   tags:
     - merge_n_models
-    - superdev
+    - cifar10
+    - resnet20
     # - emnist
     # - cifar10
 

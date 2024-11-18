@@ -8,49 +8,9 @@ import torch.nn as nn
 
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
-from ccmm.utils.graph import solve_graph
+from ccmm.utils.perm_graph import solve_graph
 
 pylogger = logging.getLogger(__name__)
-
-
-def get_perm_dict(
-    model,
-    input,
-    remove_nodes: List[str] = list(),
-):
-    perm_dict, num_perms, perm_graph, param_to_node_id_map = solve_graph(model, input, remove_nodes=remove_nodes)
-
-    P_sizes = [None] * num_perms
-
-    param_to_perm_map = dict()
-    param_to_prev_perm_map = dict()
-
-    nodes = list(perm_graph.nodes.keys())
-
-    for name, p in model.named_parameters():
-        if "temperature" in name:
-            continue
-
-        param_node_id = param_to_node_id_map[name]
-
-        if param_node_id not in nodes:
-            continue
-        else:
-            param_to_perm_map[name] = perm_graph.naming[param_node_id]
-
-        parents = perm_graph.parents(param_node_id)
-        param_to_prev_perm_map[name] = None if len(parents) == 0 else perm_graph.naming[parents[0]]
-
-        if "weight" in name[-6:]:
-
-            if len(p.shape) == 1:  # batchnorm
-                pass  # no permutation : bn is "part" for the previous one like biais
-            else:
-                if param_to_perm_map[name] is not None and perm_dict[param_to_perm_map[name]] is not None:
-                    perm_index = perm_dict[param_to_perm_map[name]]
-                    P_sizes[perm_index] = (p.shape[0], p.shape[0])
-
-    return perm_dict, param_to_perm_map, param_to_prev_perm_map
 
 
 def sinkhorn_matching(

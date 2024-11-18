@@ -4,6 +4,10 @@ from collections import defaultdict
 from functools import partial
 from typing import NamedTuple
 
+import torch
+
+from ccmm.utils.perm_graph import get_perm_dict, graph_permutations_to_layer_and_axes_to_perm
+
 pylogger = logging.getLogger(__name__)
 
 
@@ -78,7 +82,7 @@ class PermutationSpecBuilder:
     def __init__(self) -> None:
         pass
 
-    def create_permutation_spec(self) -> list:
+    def create_permutation_spec(self, **kwargs) -> list:
         pass
 
     def permutation_spec_from_axes_to_perm(self, axes_to_perm: dict) -> PermutationSpec:
@@ -96,7 +100,7 @@ class MLPPermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self, num_hidden_layers: int):
         self.num_hidden_layers = num_hidden_layers
 
-    def create_permutation_spec(self) -> PermutationSpec:
+    def create_permutation_spec(self, *args, **kwargs) -> PermutationSpec:
         L = self.num_hidden_layers
         assert L >= 1
 
@@ -115,7 +119,7 @@ class ResNet20PermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self, norm_layer="ln") -> None:
         self.norm_layer = norm_layer
 
-    def create_permutation_spec(self) -> PermutationSpec:
+    def create_permutation_spec(self, *args, **kwargs) -> PermutationSpec:
         norm_axes_fn = layernorm_axes if self.norm_layer == "ln" else batchnorm_axes
         easyblock_fn = partial(easyblock_axes, norm_layer=self.norm_layer)
         shortcut_block_fn = partial(shortcut_block_axes, norm_layer=self.norm_layer)
@@ -161,7 +165,7 @@ class ResNet50PermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self) -> None:
         pass
 
-    def create_permutation(self) -> PermutationSpec:
+    def create_permutation(self, **kwargs) -> PermutationSpec:
         # TODO: invert conv and batch norm as in ResNet20
 
         return self.permutation_spec_from_axes_to_perm(
@@ -254,7 +258,7 @@ class ViTPermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self, depth) -> None:
         self.depth = depth
 
-    def create_permutation_spec(self) -> PermutationSpec:
+    def create_permutation_spec(self, **kwargs) -> PermutationSpec:
 
         axes_to_perm = {
             # layer norm
@@ -333,7 +337,7 @@ class CNNPermutationSpecBuilder(PermutationSpecBuilder):
     def __init__(self) -> None:
         super().__init__()
 
-    def create_permutation_spec(self) -> PermutationSpec:
+    def create_permutation_spec(self, **kwargs) -> PermutationSpec:
         axes_to_perm = {
             **conv_axes("conv1", p_rows="P_conv1", p_cols=None, bias=True),
             **conv_axes("conv2", p_rows="P_conv2", p_cols="P_conv1", bias=True),
@@ -343,3 +347,19 @@ class CNNPermutationSpecBuilder(PermutationSpecBuilder):
         }
 
         return self.permutation_spec_from_axes_to_perm(axes_to_perm)
+
+
+class AutoPermutationSpecBuilder(PermutationSpecBuilder):
+    def create_permutation_spec(self, ref_model, **kwargs) -> list:
+        x = torch.randn(1, 3, 256, 256)
+
+        while hasattr(ref_model, "model"):
+            ref_model = ref_model.model
+
+        perm_dict, map_param_index, map_prev_param_index = get_perm_dict(ref_model, input=x)
+
+        layer_and_axes_to_perm = graph_permutations_to_layer_and_axes_to_perm(
+            ref_model, perm_dict, map_param_index, map_prev_param_index
+        )
+
+        return self.permutation_spec_from_axes_to_perm(layer_and_axes_to_perm)

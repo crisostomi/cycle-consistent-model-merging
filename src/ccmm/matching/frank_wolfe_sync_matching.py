@@ -13,12 +13,13 @@ from ccmm.matching.frank_wolfe_matching import collect_perm_sizes, initialize_pe
 from ccmm.matching.permutation_spec import PermutationSpec
 from ccmm.matching.utils import PermutationIndices, PermutationMatrix, generalized_inner_product, perm_cols, perm_rows
 from ccmm.matching.weight_matching import solve_linear_assignment_problem
+from ccmm.utils.utils import get_model
 
 pylogger = logging.getLogger(__name__)
 
 
 def frank_wolfe_synchronized_matching(
-    models: Dict[str, LightningModule],
+    params: Dict[str, LightningModule],
     perm_spec: PermutationSpec,
     symbols: List[str],
     combinations: List[Tuple],
@@ -37,9 +38,6 @@ def frank_wolfe_synchronized_matching(
     else:
         pylogger.setLevel(logging.WARNING)
 
-    models = {symb: copy.deepcopy(model).to(device) for symb, model in models.items()}
-
-    params = {symb: model.model.state_dict() for symb, model in models.items()}
     ref_params = params[symbols[0]]
 
     perm_sizes = collect_perm_sizes(perm_spec, ref_params)
@@ -67,8 +65,7 @@ def frank_wolfe_synchronized_matching(
         }
 
         for fixed_symbol, permutee_symbol in combinations:
-            fixed_model, permutee_model = models[fixed_symbol], models[permutee_symbol]
-            params_a, params_b = fixed_model.model.state_dict(), permutee_model.model.state_dict()
+            params_a, params_b = params[fixed_symbol], params[permutee_symbol]
 
             pylogger.debug(f"Collecting gradients for {fixed_symbol} and {permutee_symbol}")
 
@@ -112,7 +109,7 @@ def frank_wolfe_synchronized_matching(
 
         obj_values.append(new_obj)
         step_sizes.append(step_size)
-        perm_history.append(perm_matrices)
+        # perm_history.append(perm_matrices)
 
         if (new_obj - old_obj) < 1e-6:
             patience_steps += 1
