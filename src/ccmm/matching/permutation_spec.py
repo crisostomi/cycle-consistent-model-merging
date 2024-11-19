@@ -350,13 +350,12 @@ class CNNPermutationSpecBuilder(PermutationSpecBuilder):
 
 
 class AutoPermutationSpecBuilder(PermutationSpecBuilder):
-    def create_permutation_spec(self, ref_model, **kwargs) -> list:
-        x = torch.randn(1, 3, 256, 256)
+    def create_permutation_spec(self, ref_model, ref_input, **kwargs) -> list:
 
         while hasattr(ref_model, "model"):
             ref_model = ref_model.model
 
-        perm_dict, map_param_index, map_prev_param_index = get_perm_dict(ref_model, input=x)
+        perm_dict, map_param_index, map_prev_param_index = get_perm_dict(ref_model, input=ref_input)
 
         layer_and_axes_to_perm = graph_permutations_to_layer_and_axes_to_perm(
             ref_model, perm_dict, map_param_index, map_prev_param_index

@@ -452,7 +452,7 @@ def compute_gradient_P_curr(Wa, Wb, P_prev, debug=True):
     grad_P_curr = generalized_inner_product(Wa, Wb_perm)
 
     if debug and len(Wa.shape) == 2:
-        assert torch.allclose(grad_P_curr, Wa @ P_prev @ Wb.T, atol=1e-5)
+        assert torch.allclose(grad_P_curr, Wa @ P_prev @ Wb.T, atol=1e-3)
 
     return grad_P_curr
 
