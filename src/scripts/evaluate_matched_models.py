@@ -130,7 +130,7 @@ def evaluate_pair_of_models(models, fixed_id, permutee_id, updated_params, train
     get_model(permutee_model).load_state_dict(updated_params[fixed_id][permutee_id])
 
     results = evaluate_interpolated_models(
-        fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching, repair=True
+        fixed_model, permutee_model, train_loader, test_loader, lambdas, cfg.matching, repair=False
     )
 
     return results

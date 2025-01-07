@@ -58,6 +58,7 @@ class GitRebasinMatcher(Matcher):
             permutee=permutee.state_dict(),
             max_iter=self.max_iter,
             layer_iteration_order=self.layer_iteration_order,
+            verbose=True,
         )
 
         return permutation_indices, None

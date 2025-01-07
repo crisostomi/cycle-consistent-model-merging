@@ -73,7 +73,10 @@ def get_inverse_permutations(permutations: Dict[str, PermutationIndices]) -> Dic
 
 def perm_indices_to_perm_matrix(perm_indices: PermutationIndices):
     n = len(perm_indices)
-    perm_matrix = torch.eye(n, device=perm_indices.device)[perm_indices.long()]
+    if isinstance(perm_indices, torch.Tensor):
+        perm_matrix = torch.eye(n, device=perm_indices.device)[perm_indices.long()]
+    else:
+        perm_matrix = np.eye(n)[perm_indices]
     return perm_matrix
 
 

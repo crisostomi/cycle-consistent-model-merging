@@ -1,3 +1,4 @@
+import copy
 import logging
 from enum import auto
 from typing import List, Tuple, Union
@@ -141,8 +142,8 @@ def weight_matching(
 
             for params_name, axis in params_and_axes:
 
-                w_a = params_a[params_name]
-                w_b = params_b[params_name]
+                w_a = copy.deepcopy(params_a[params_name])
+                w_b = copy.deepcopy(params_b[params_name])
 
                 assert w_a.shape == w_b.shape
 
