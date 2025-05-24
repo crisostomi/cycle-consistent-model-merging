@@ -1,7 +1,7 @@
 # Cycle Consistent Model Merging
 
 <p align="center">
-    <img alt="Static Badge" src="https://img.shields.io/badge/2024-2024?logoColor=grey&label=NeurIPS&labelColor=purple&color=grey&link=https%3A%2F%2Farxiv.org%2Fabs%2F2405.17897">
+    <a href="https://arxiv.org/abs/2405.17897"><img alt="NeurIPS 2024" src="https://img.shields.io/badge/2024-2024?logoColor=grey&label=NeurIPS&labelColor=purple&color=grey&link=https%3A%2F%2Farxiv.org%2Fabs%2F2405.17897"></a>
     <a href="https://github.com/grok-ai/nn-template"><img alt="NN Template" src="https://shields.io/badge/nn--template-0.2.3-emerald?style=flat&labelColor=gray"></a>
     <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.9-blue.svg"></a>
     <a href="https://black.readthedocs.io/en/stable/"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
