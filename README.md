@@ -1,7 +1,7 @@
 # Cycle Consistent Model Merging
 
 <p align="center">
-    <a href="https://github.com/crisostomi/cycle-consistent-model-merging/actions/workflows/test_suite.yml"><img alt="CI" src=https://img.shields.io/github/workflow/status/crisostomi/cycle-consistent-model-merging/Test%20Suite/main?label=main%20checks></a>
+    <a href="https://img.shields.io/badge/2024-2024?logoColor=grey&label=NeurIPS&labelColor=purple&color=grey&link=https%3A%2F%2Farxiv.org%2Fabs%2F2405.17897">
     <a href="https://crisostomi.github.io/cycle-consistent-model-merging"><img alt="Docs" src=https://img.shields.io/github/deployments/crisostomi/cycle-consistent-model-merging/github-pages?label=docs></a>
     <a href="https://github.com/grok-ai/nn-template"><img alt="NN Template" src="https://shields.io/badge/nn--template-0.2.3-emerald?style=flat&labelColor=gray"></a>
     <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.9-blue.svg"></a>
