@@ -6,7 +6,7 @@
     <a href="https://black.readthedocs.io/en/stable/"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </p>
 
-![Teaser](figures/teaser.png)
+![Teaser](misc/figures/teaser.png)
 
 Merging models in a cycle-consistent fashion.
 
