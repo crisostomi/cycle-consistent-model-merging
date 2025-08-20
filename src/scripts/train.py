@@ -96,7 +96,7 @@ def run(cfg: DictConfig) -> str:
 
 
 @hydra.main(
-    config_path=str(PROJECT_ROOT / "conf"), config_name="mlp", version_base="1.1"
+    config_path=str(PROJECT_ROOT / "conf"), config_name="train", version_base="1.1"
 )
 def main(cfg: omegaconf.DictConfig):
     run(cfg)

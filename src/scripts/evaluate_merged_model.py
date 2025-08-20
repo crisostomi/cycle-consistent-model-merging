@@ -37,7 +37,9 @@ def run(cfg: DictConfig) -> str:
 
     template_core: NNTemplateCore = NNTemplateCore(restore_cfg=None)
 
-    logger: NNLogger = NNLogger(logging_cfg=core_cfg.logging, cfg=core_cfg, resume_id=template_core.resume_id)
+    logger: NNLogger = NNLogger(
+        logging_cfg=core_cfg.logging, cfg=core_cfg, resume_id=template_core.resume_id
+    )
 
     merged_model = load_model_from_artifact(logger.experiment, artifact_path(suffix))
 
@@ -46,11 +48,15 @@ def run(cfg: DictConfig) -> str:
     train_dataset = instantiate(core_cfg.dataset.train, transform=transform)
     test_dataset = instantiate(core_cfg.dataset.test, transform=transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
+    train_loader = DataLoader(
+        train_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers
+    )
 
     results = {}
-    trainer = instantiate(cfg.trainer)
+    trainer = instantiate(cfg.train)
 
     train_results = trainer.test(merged_model, train_loader)[0]
     train_results["acc/train"] = train_results["acc/test"]
@@ -62,9 +68,11 @@ def run(cfg: DictConfig) -> str:
     metrics = ["acc", "loss"]
     for metric in metrics:
         for split in ["train", "test"]:
-            logger.experiment.log({f"{metric}/{split}": results[split][f"{metric}/{split}"]})
+            logger.experiment.log(
+                {f"{metric}/{split}": results[split][f"{metric}/{split}"]}
+            )
 
-    # trainer = instantiate(cfg.trainer, max_epochs=100)
+    # trainer = instantiate(cfg.train, max_epochs=100)
     # trainer.fit(merged_model, train_loader)
     # test_results = trainer.test(merged_model, test_loader)[0]
     # print(test_results)
@@ -76,7 +84,11 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="merge_n_models", version_base="1.1")
+@hydra.main(
+    config_path=str(PROJECT_ROOT / "conf"),
+    config_name="merge_n_models",
+    version_base="1.1",
+)
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

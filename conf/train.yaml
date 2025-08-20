@@ -8,7 +8,7 @@ core:
 defaults:
   - hydra: default
   - nn: mlp
-  - trainer: mlp
+  - train: mlp
   - dataset: emnist
   - _self_ # as last argument to allow the override of parameters via this main config
 #    Decomment this parameter to get parallel job running
@@ -16,30 +16,30 @@ defaults:
 
 # # CNN 
 #   - nn: cnn
-#   - trainer: cnn
+#   - train: cnn
 #   - dataset: emnist
 
 # # RESNET 
 #   - nn: resnet
-#   - trainer: resnet
+#   - train: resnet
 #   - dataset: emnist
 
 # # RESNET50
 #   - nn: resnet50
-#   - trainer: resnet50
+#   - train: resnet50
 #   - dataset: tiny_imagenet
 
 # # VGG
 #   - nn: vgg
-#   - trainer: vgg
+#   - train: vgg
 #   - dataset: emnist #cifar10
 
 # # VIT
 #   - nn: vit_no_identity
-#   - trainer: vit
+#   - train: vit
 #   - dataset: cifar10
 
 # N-TASKS
 # - nn: n_tasks
-# - trainer: resnet18_pt
+# - train: resnet18_pt
 # - dataset: cifar100_tasks

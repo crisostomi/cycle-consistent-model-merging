@@ -6,7 +6,7 @@ data:
 
   dataset: ${dataset}
 
-  gpus: ${trainer.trainer.gpus}
+  gpus: ${train.trainer.gpus}
 
   num_workers:
     train: 8
@@ -36,7 +36,7 @@ module:
   lr_scheduler:
     _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
     warmup_epochs: 1
-    max_epochs: ${trainer.trainer.max_epochs}
+    max_epochs: ${train.trainer.max_epochs}
     warmup_start_lr: 1e-6 #1e-6
     eta_min: 0.0
     last_epoch: -1

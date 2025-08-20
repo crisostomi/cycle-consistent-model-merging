@@ -37,6 +37,6 @@ logging:
     log_freq: 100
 
 
-trainer:
+train:
   trainer:
     fast_dev_run: False
