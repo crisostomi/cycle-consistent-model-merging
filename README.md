@@ -17,15 +17,12 @@ Setup the development environment:
 ```bash
 git clone git@github.com:crisostomi/cycle-consistent-model-merging.git
 cd cycle-consistent-model-merging
-conda env create -f env.yaml
-conda activate ccmm
-pre-commit install
+uv sync
 ```
 
 Run the tests:
 
 ```bash
-pre-commit run --all-files
 pytest -v
 ```
 
