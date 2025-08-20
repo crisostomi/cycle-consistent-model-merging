@@ -26,14 +26,6 @@ Run the tests:
 pytest -v
 ```
 
-### Update the dependencies
-
-Re-install the project in edit mode:
-
-```bash
-pip install -e .[dev]
-```
-
 ## Usage
 
 All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use. You can train models using `train.py` with a dataset and model of your choice.
