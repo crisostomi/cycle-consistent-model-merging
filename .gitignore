@@ -233,3 +233,5 @@ multirun/
 doctest-output/
 tmp/
 notebooks/figures/
+
+notebooks/lightning_logs/**

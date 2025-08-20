@@ -47,6 +47,32 @@ LAYER_TO_VAR = {
 }
 
 
+def compute_weights_similarity(similarity_matrix, perm_indices):
+    """
+    similarity_matrix: matrix s.t. S[i, j] = w_a[i] @ w_b[j]
+
+    we sum over the cells identified by perm_indices, i.e. S[i, perm_indices[i]] for all i
+    """
+
+    n = len(perm_indices)
+
+    similarity = torch.sum(similarity_matrix[torch.arange(n), perm_indices.long()])
+
+    return similarity
+
+
+def solve_linear_assignment_problem(sim_matrix: Union[torch.Tensor, np.ndarray], return_matrix=False):
+    if isinstance(sim_matrix, torch.Tensor):
+        sim_matrix = sim_matrix.cpu().detach().numpy()
+
+    ri, ci = linear_sum_assignment(sim_matrix, maximize=True)
+
+    assert (torch.tensor(ri) == torch.arange(len(ri))).all()
+
+    indices = torch.tensor(ci)
+    return indices if not return_matrix else perm_indices_to_perm_matrix(indices)
+
+
 def get_layer_iteration_order(layer_iteration_order: LayerIterationOrder, num_layers: int):
     if layer_iteration_order == LayerIterationOrder.RANDOM:
         return torch.randperm(num_layers)
@@ -183,20 +209,6 @@ def weight_matching(
     return all_perm_indices
 
 
-def compute_weights_similarity(similarity_matrix, perm_indices):
-    """
-    similarity_matrix: matrix s.t. S[i, j] = w_a[i] @ w_b[j]
-
-    we sum over the cells identified by perm_indices, i.e. S[i, perm_indices[i]] for all i
-    """
-
-    n = len(perm_indices)
-
-    similarity = torch.sum(similarity_matrix[torch.arange(n), perm_indices.long()])
-
-    return similarity
-
-
 def alternating_diffusion(
     initial_perm: PermutationMatrix, dist_aa: Tensor, dist_bb: Tensor, alternate_diffusion_params, param_name
 ) -> PermutationIndices:
@@ -258,15 +270,3 @@ def alternating_diffusion(
     pylogger.info(f"Did all {K} iterations.")
 
     return perm_indices
-
-
-def solve_linear_assignment_problem(sim_matrix: Union[torch.Tensor, np.ndarray], return_matrix=False):
-    if isinstance(sim_matrix, torch.Tensor):
-        sim_matrix = sim_matrix.cpu().detach().numpy()
-
-    ri, ci = linear_sum_assignment(sim_matrix, maximize=True)
-
-    assert (torch.tensor(ri) == torch.arange(len(ri))).all()
-
-    indices = torch.tensor(ci)
-    return indices if not return_matrix else perm_indices_to_perm_matrix(indices)
