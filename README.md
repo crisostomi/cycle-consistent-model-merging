@@ -12,6 +12,8 @@ Merging models in a cycle-consistent fashion.
 
 ## Development installation
 
+This project requires a `wandb` account for storing checkpoints and logs. 
+
 Setup the development environment:
 
 ```bash
@@ -31,7 +33,7 @@ pytest -v
 All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use. 
 
 ### Training 
-You can train models using `train.py` with a dataset and model of your choice. 
+You can train models using `train.py` with a dataset and model of your choice. These must be selected in `conf/train.yaml`.
 
 ### Matching two models
 
