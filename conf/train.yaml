@@ -1,0 +1,45 @@
+core:
+  project_name: cycle-consistent-model-merging
+  storage_dir: ${oc.env:PROJECT_ROOT}/storage
+  version: 0.0.1
+  tags:
+    - train
+
+defaults:
+  - hydra: default
+  - nn: mlp
+  - trainer: mlp
+  - dataset: emnist
+  - _self_ # as last argument to allow the override of parameters via this main config
+#    Decomment this parameter to get parallel job running
+#  - hydra/launcher: joblib
+
+# # CNN 
+#   - nn: cnn
+#   - trainer: cnn
+#   - dataset: emnist
+
+# # RESNET 
+#   - nn: resnet
+#   - trainer: resnet
+#   - dataset: emnist
+
+# # RESNET50
+#   - nn: resnet50
+#   - trainer: resnet50
+#   - dataset: tiny_imagenet
+
+# # VGG
+#   - nn: vgg
+#   - trainer: vgg
+#   - dataset: emnist #cifar10
+
+# # VIT
+#   - nn: vit_no_identity
+#   - trainer: vit
+#   - dataset: cifar10
+
+# N-TASKS
+# - nn: n_tasks
+# - trainer: resnet18_pt
+# - dataset: cifar100_tasks

@@ -7,7 +7,7 @@ data:
 
   dataset: ${dataset}
 
-  gpus: ${train.trainer.gpus}
+  gpus: ${trainer.trainer.gpus}
 
   num_workers:
     train: 8

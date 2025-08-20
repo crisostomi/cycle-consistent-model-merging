@@ -8,7 +8,7 @@ data:
   data_path: ${nn.data_path}
   only_use_sample_num: -1 # -1 means use all samples
 
-  gpus: ${train.trainer.gpus}
+  gpus: ${trainer.trainer.gpus}
 
   num_workers:
     train: 8

@@ -1,17 +1,19 @@
-seed_index: 2
+# reproducibility
+seed_index: 1
 deterministic: False
 
+# PyTorch Lightning Trainer https://pytorch-lightning.readthedocs.io/en/stable/common/trainer.html
 trainer:
-  fast_dev_run: False
+  fast_dev_run: False # Enable this for debug purposes
   gpus: 1
   precision: 32
-  max_epochs: 50 #  EMNIST
-  max_steps: 10000
+  max_epochs: 100 # 250 TODO: roll back when changing dataset
+  max_steps: -1
   accumulate_grad_batches: 1
   num_sanity_val_steps: 2
   gradient_clip_val: 10.0
   val_check_interval: 1.0
-  deterministic: ${train.deterministic}
+  deterministic: ${trainer.deterministic}
 
 restore:
   ckpt_or_run_path: null
@@ -22,12 +24,19 @@ monitor:
   mode: 'min'
 
 callbacks:
+  # - _target_: pytorch_lightning.callbacks.EarlyStopping
+  #   patience: 42
+  #   verbose: False
+  #   monitor: ${trainer.monitor.metric}
+  #   mode: ${trainer.monitor.mode}
 
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
     save_top_k: 1
     verbose: False
-    monitor: ${train.monitor.metric}
-    mode: ${train.monitor.mode}
+    monitor: null
+    mode: ${trainer.monitor.mode}
+    every_n_epochs: 50
+    save_last: True
 
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     logging_interval: "step"

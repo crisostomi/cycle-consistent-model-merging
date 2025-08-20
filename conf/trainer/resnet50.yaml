@@ -1,38 +1,38 @@
-seed_index: 1
+seed_index: 2
 deterministic: False
 
 trainer:
   fast_dev_run: False
   gpus: 1
   precision: 32
-  max_epochs: 250
+  max_epochs: 1
   max_steps: -1
   accumulate_grad_batches: 1
   num_sanity_val_steps: 2
   gradient_clip_val: 10.0
   val_check_interval: 1.0
-  deterministic: ${train.deterministic}
+  deterministic: ${trainer.deterministic}
 
 restore:
   ckpt_or_run_path: null
   mode: continue # null, finetune, hotstart, continue
 
 monitor:
-  metric: 'loss/train'
+  metric: 'loss/val'
   mode: 'min'
 
 callbacks:
-  # - _target_: pytorch_lightning.callbacks.EarlyStopping
-  #   patience: 42
-  #   verbose: False
-  #   monitor: ${train.monitor.metric}
-  #   mode: ${train.monitor.mode}
+  - _target_: pytorch_lightning.callbacks.EarlyStopping
+    patience: 42
+    verbose: False
+    monitor: ${trainer.monitor.metric}
+    mode: ${trainer.monitor.mode}
 
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
     save_top_k: 2
     verbose: False
-    monitor: ${train.monitor.metric}
-    mode: ${train.monitor.mode}
+    monitor: ${trainer.monitor.metric}
+    mode: ${trainer.monitor.mode}
 
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     logging_interval: "step"

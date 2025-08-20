@@ -17,6 +17,7 @@ from nn_core.serialization import NNCheckpointIO
 
 import ccmm  # noqa
 from ccmm.data.datamodule import MetaData
+from ccmm.utils.io_utils import upload_model_to_wandb
 from ccmm.utils.utils import build_callbacks
 
 pylogger = logging.getLogger(__name__)
@@ -36,16 +37,22 @@ def run(cfg: DictConfig) -> str:
     cfg.core.tags = enforce_tags(cfg.core.get("tags", None))
 
     pylogger.info(f"Instantiating <{cfg.nn.data['_target_']}>")
-    datamodule: pl.LightningDataModule = hydra.utils.instantiate(cfg.nn.data, _recursive_=False)
+    datamodule: pl.LightningDataModule = hydra.utils.instantiate(
+        cfg.nn.data, _recursive_=False
+    )
 
     metadata: Optional[MetaData] = getattr(datamodule, "metadata", None)
     if metadata is None:
-        pylogger.warning(f"No 'metadata' attribute found in datamodule <{datamodule.__class__.__name__}>")
+        pylogger.warning(
+            f"No 'metadata' attribute found in datamodule <{datamodule.__class__.__name__}>"
+        )
 
     pylogger.info(f"Using dataset [bold yellow]{cfg.dataset.name}[/bold yellow]")
 
     pylogger.info(f"Instantiating <{cfg.nn.module['_target_']}>")
-    model: pl.LightningModule = hydra.utils.instantiate(cfg.nn.module, _recursive_=False, metadata=metadata)
+    model: pl.LightningModule = hydra.utils.instantiate(
+        cfg.nn.module, _recursive_=False, metadata=metadata
+    )
 
     template_core: NNTemplateCore = NNTemplateCore(
         restore_cfg=cfg.train.get("restore", None),
@@ -54,7 +61,9 @@ def run(cfg: DictConfig) -> str:
 
     storage_dir: str = cfg.core.storage_dir
 
-    logger: NNLogger = NNLogger(logging_cfg=cfg.train.logging, cfg=cfg, resume_id=template_core.resume_id)
+    logger: NNLogger = NNLogger(
+        logging_cfg=cfg.train.logging, cfg=cfg, resume_id=template_core.resume_id
+    )
 
     pylogger.info("Instantiating the <Trainer>")
     trainer = pl.Trainer(
@@ -67,11 +76,16 @@ def run(cfg: DictConfig) -> str:
 
     pylogger.info("Starting training!")
 
-    trainer.fit(model=model, datamodule=datamodule, ckpt_path=template_core.trainer_ckpt_path)
+    trainer.fit(
+        model=model, datamodule=datamodule, ckpt_path=template_core.trainer_ckpt_path
+    )
 
     upload_model_to_wandb(model, logger.experiment, cfg)
 
-    if "test" in cfg.nn.data.dataset and trainer.checkpoint_callback.best_model_path is not None:
+    if (
+        "test" in cfg.nn.data.dataset
+        and trainer.checkpoint_callback.best_model_path is not None
+    ):
         pylogger.info("Starting testing!")
         trainer.test(datamodule=datamodule)
 
@@ -81,33 +95,9 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig):
-    trainer = pl.Trainer(
-        plugins=[NNCheckpointIO(jailing_dir="./tmp")],
-    )
-
-    temp_path = "temp_checkpoint.ckpt"
-
-    trainer.strategy.connect(model)
-    trainer.save_checkpoint(temp_path)
-
-    model_class = model.__class__.__module__ + "." + model.__class__.__qualname__
-
-    artifact_name = f"{cfg.dataset.name}_{cfg.nn.module.model_name}_{cfg.train.seed_index}"
-
-    model_artifact = wandb.Artifact(
-        name=artifact_name,
-        type="checkpoint",
-        metadata={"model_identifier": cfg.nn.module.model_name, "model_class": model_class},
-    )
-
-    model_artifact.add_file(temp_path + ".zip", name="trained.ckpt.zip")
-    run.log_artifact(model_artifact)
-
-    os.remove(temp_path + ".zip")
-
-
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="vit", version_base="1.1")
+@hydra.main(
+    config_path=str(PROJECT_ROOT / "conf"), config_name="mlp", version_base="1.1"
+)
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

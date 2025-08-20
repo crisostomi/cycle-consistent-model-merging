@@ -7,7 +7,7 @@ data:
 
   dataset: ${dataset}
 
-  gpus: ${train.trainer.gpus}
+  gpus: ${trainer.trainer.gpus}
 
   num_workers:
     train: 8
@@ -38,7 +38,7 @@ module:
   lr_scheduler:
     _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
     warmup_epochs: 5 # they claim 1 warm up epoch on the paper, but I found 5 in their code
-    max_epochs: ${train.trainer.max_epochs}
+    max_epochs: ${trainer.trainer.max_epochs}
     warmup_start_lr: 1e-6
     eta_min: 0.0
     last_epoch: -1

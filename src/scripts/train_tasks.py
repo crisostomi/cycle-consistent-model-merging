@@ -17,6 +17,7 @@ from nn_core.model_logging import NNLogger
 from nn_core.serialization import NNCheckpointIO
 
 import ccmm  # noqa
+from ccmm.utils.io_utils import upload_model_to_wandb
 from ccmm.utils.utils import build_callbacks
 
 disable_caching()
@@ -37,7 +38,9 @@ def run(cfg: DictConfig) -> str:
     cfg.core.tags = enforce_tags(cfg.core.get("tags", None))
 
     pylogger.info(f"Instantiating <{cfg.nn.data['_target_']}>")
-    datamodule: pl.LightningDataModule = hydra.utils.instantiate(cfg.nn.data, _recursive_=False)
+    datamodule: pl.LightningDataModule = hydra.utils.instantiate(
+        cfg.nn.data, _recursive_=False
+    )
 
     num_tasks = datamodule.data["metadata"]["num_tasks"]
     num_classes = datamodule.data["metadata"]["num_classes"]
@@ -56,7 +59,9 @@ def run(cfg: DictConfig) -> str:
         )
 
         datamodule.task_ind = task_ind
-        datamodule.transform_func = hydra.utils.instantiate(cfg.dataset.transform_func, _recursive_=True)
+        datamodule.transform_func = hydra.utils.instantiate(
+            cfg.dataset.transform_func, _recursive_=True
+        )
         datamodule.setup()
 
         template_core: NNTemplateCore = NNTemplateCore(
@@ -64,7 +69,9 @@ def run(cfg: DictConfig) -> str:
         )
         callbacks: List[Callback] = build_callbacks(cfg.train.callbacks, template_core)
 
-        logger: NNLogger = NNLogger(logging_cfg=cfg.train.logging, cfg=cfg, resume_id=template_core.resume_id)
+        logger: NNLogger = NNLogger(
+            logging_cfg=cfg.train.logging, cfg=cfg, resume_id=template_core.resume_id
+        )
 
         pylogger.info("Instantiating the <Trainer>")
         trainer = pl.Trainer(
@@ -97,31 +104,11 @@ def run(cfg: DictConfig) -> str:
     return logger.run_dir
 
 
-def upload_model_to_wandb(model: LightningModule, run, cfg: DictConfig, artifact_name):
-    trainer = pl.Trainer(
-        plugins=[NNCheckpointIO(jailing_dir="./tmp")],
-    )
-
-    temp_path = "temp_checkpoint.ckpt"
-
-    trainer.strategy.connect(model)
-    trainer.save_checkpoint(temp_path)
-
-    model_class = model.__class__.__module__ + "." + model.__class__.__qualname__
-
-    model_artifact = wandb.Artifact(
-        name=artifact_name,
-        type="checkpoint",
-        metadata={"model_identifier": cfg.nn.module.model_name, "model_class": model_class},
-    )
-
-    model_artifact.add_file(temp_path + ".zip", name="trained.ckpt.zip")
-    run.log_artifact(model_artifact)
-
-    os.remove(temp_path + ".zip")
-
-
-@hydra.main(config_path=str(PROJECT_ROOT / "conf"), config_name="train_tasks", version_base="1.1")
+@hydra.main(
+    config_path=str(PROJECT_ROOT / "conf"),
+    config_name="train_tasks",
+    version_base="1.1",
+)
 def main(cfg: omegaconf.DictConfig):
     run(cfg)
 

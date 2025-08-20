@@ -28,7 +28,10 @@ pytest -v
 
 ## Usage
 
-All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use. You can train models using `train.py` with a dataset and model of your choice.
+All the scripts can be found under `src/scripts/`. Each script has a corresponding configuration file in `conf/matching` where you can change stuff as dataset and model to use. 
+
+### Training 
+You can train models using `train.py` with a dataset and model of your choice. 
 
 ### Matching two models
 
@@ -52,3 +55,12 @@ To change the matching technique, you have to change the `matcher` in `conf/matc
 2. evaluate the merged model using `evaluate_merged_model.py` and the same config used for the previous step.
 
 To change the merging technique, you have to change the `merger` in `conf/matching/merge_n_models.yaml`. Each merger has its own config file in `conf/matching/merger/`.
+
+
+### Reproducing the paper
+
+#### Merging an increasing number of models
+
+To reproduce the scaling experiment in Figure 7, use script `scripts/scaling_merging.py`.  
+
+#### 
